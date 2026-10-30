@@ -1,6 +1,6 @@
 import Foundation
 
-enum SexAndSexDrive: Int, Codable {
+enum SexualActivity: Int, Codable {
     case didntHaveSex = 0
     case protectedSex = 1
     case unprotectedSex = 2
@@ -10,7 +10,4 @@ enum SexAndSexDrive: Int, Codable {
     case sensualTouch = 6
     case sexToys = 7
     case orgasm = 8
-    case highSexDrive = 9
-    case neutralSexDrive = 10
-    case lowSexDrive = 11
 }
