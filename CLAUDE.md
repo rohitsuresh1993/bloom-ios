@@ -4,8 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Cyclo is an early-stage iOS period/cycle-tracking app, built with SwiftUI + SwiftData. The project is currently
-data-model-only: there is no app entry point, UI, or test target yet. Expect to build these out.
+Cyclo is an early-stage iOS period/cycle-tracking app, built with SwiftUI + SwiftData. It has a real `@main` entry
+point (`CycloApp.swift`) and a first Home screen, plus a full set of UI-agnostic data/domain modules (Persistence,
+Repositories, Prediction, Auth, Security, HealthKitIntegration) — see `ARCHITECTURE.md`. Most of these aren't
+wired together yet (repositories don't yet trigger HealthKit export; `HomePage` doesn't yet read real data from
+Repositories/Prediction) — see "Current repo state notes" below for what's real vs. placeholder. There's still no
+test target.
 
 - Xcode project: `cyclo-ios.xcodeproj`, single target `cyclo-ios`
 - Bundle ID: `cyclo.cyclo-ios`
@@ -39,11 +43,11 @@ Opening `cyclo-ios.xcodeproj` in Xcode and using Cmd+R / Cmd+U is the simpler da
 
 ## Architecture
 
-All source currently lives under `cyclo-ios/cyclo-ios/Modules/Core/Models/`. The module layout anticipates future
-`Modules/<Feature>` separation, but only `Core/Models` exists so far.
-
-See `ARCHITECTURE.md` for the full tech stack, module plan, and prediction strategy — this section just describes
-the models as they exist in code today.
+Source lives under `cyclo-ios/cyclo-ios/Modules/` (`Core/Models`, `Core/Persistence`, `Core/Repositories`,
+`Prediction`, `Auth`, `Security`, `HealthKitIntegration`, `Features/Home`), plus the app entry point
+`cyclo-ios/cyclo-ios/CycloApp.swift` and `Assets.xcassets` at the synchronized root. See `ARCHITECTURE.md` for the
+full tech stack, module plan, and prediction strategy — this section just describes the models as they exist in
+code today.
 
 **Persistence model (SwiftData `@Model` classes):**
 - `User` (`Models/User.swift`) — `uuid` (not unique at the DB level — SwiftData+CloudKit doesn't support unique
@@ -78,17 +82,24 @@ reference into `toModel(user:)`) when adding DTOs for models with relationships,
 
 ## Current repo state notes
 
-- **Branch `2-create-data-models` (current, HEAD = `fb96f88`)**: SwiftData models only, no UI, no `@main` App entry
-  point, no Assets.xcassets. This is the branch CLAUDE.md describes above.
-- **Branch `origin/3-create-home-view`**: a sibling branch, diverged from a *different* initial commit (`e96a026`,
-  not `1f0ea2e`), with a working home screen (`cyclo-ios/UI/Views/pageApp.swift` — the `@main` entry point,
-  `cyclo-ios/UI/Views/HomePage.swift`, `cyclo-ios/UI/Components/TopBar.swift`) plus `Assets.xcassets` defining
-  `Color.cycloPrimary` / `Color.cycloSecondary`. It has **no Models directory at all** — built independently of
-  this branch. The two branches will need to be reconciled/merged before the app has both data and UI.
-- Legacy duplicate: a top-level `Modules/Core/Models/` directory (outside `cyclo-ios/`, not part of the
-  Xcode-synchronized target root) holds broken/stub leftovers — empty files, a `Date` class that shadows
-  `Foundation.Date`, references to a nonexistent `@Id` macro. It is **not compiled into the app**. As of this
-  writing these stub files are staged in git's index (as adds) but already deleted from disk, and `LICENSE` /
-  `README.md` are deleted from disk but unstaged — i.e. mid-cleanup, not yet committed either way. When working
-  with models, always use the `cyclo-ios/Modules/...` path — that's the one actually compiled into the app. The
-  top-level `Modules/` directory should eventually be deleted outright.
+- **Branch `2-create-data-models` (current)**: has the full data/domain module set plus a real app entry point
+  and a first UI screen. The project now actually links (`xcodebuild ... build` succeeds, launches, and renders in
+  the simulator) — previously every build failed to link with an expected "Undefined symbols `_main`" error since
+  there was no `@main`.
+- **UI/data reconciliation (done)**: a sibling branch, `origin/3-create-home-view`, had diverged from a *different*
+  initial commit (`e96a026`, not this branch's `1f0ea2e`) and had **no common ancestor** with this branch
+  (`git merge-base` returns nothing) — it was built independently, with a working home screen but no Models
+  directory at all. Rather than `git merge --allow-unrelated-histories` (which would fight over two independently
+  -authored `project.pbxproj` files), its content was ported by hand: `HomePage.swift`/`TopBar.swift` moved from
+  that branch's ad hoc `UI/Views`/`UI/Components` into this branch's `Modules/Features/Home/` convention,
+  `Assets.xcassets` copied over as-is (its colorset folders are named `CycloPrimaryColor`/`CycloSecondaryColor`,
+  but `ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES` — already set in this branch's
+  pbxproj — generates the symbols as `Color.cycloPrimary`/`Color.cycloSecondary`, dropping the redundant "Color"
+  suffix), and a new `CycloApp.swift` written to wire `PersistenceController`'s `ModelContainer` and
+  `AppLockGateView` around `HomePage`. That branch's own `project.pbxproj`, empty/unused Objective-C bridging
+  header, `LICENSE`, and `README.md` were left behind (this branch's copies are equivalent or richer).
+  `origin/3-create-home-view` itself is now superseded/stale. **`HomePage` is still the original placeholder UI**
+  (hardcoded "LOW"/"LOW" fertility and pregnancy-chance strings, a literal `"N"` for days-until-period) — wiring
+  it to real `Repositories`/`Prediction` output is unstarted follow-up work, not a bug.
+- Legacy duplicate top-level `Modules/Core/Models/` directory (broken stub leftovers, outside the Xcode-
+  synchronized target root): already deleted. When working with models, use the `cyclo-ios/Modules/...` path.
