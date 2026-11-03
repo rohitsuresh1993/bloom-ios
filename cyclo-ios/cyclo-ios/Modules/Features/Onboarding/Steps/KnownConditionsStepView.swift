@@ -31,15 +31,29 @@ struct KnownConditionsStepView: View {
         }
     }
 
+    // `.other` ("Other / none of these") and `.preferNotToSay` are catch-all, mutually-exclusive
+    // answers — selecting one clears every other selection (including the other catch-all),
+    // and selecting any specific condition clears whichever catch-all was selected. Without this,
+    // a user could end up with "Thyroid disorder" and "Prefer not to say" both checked at once,
+    // which doesn't mean anything.
+    private static let exclusiveConditions: Set<MenstrualCondition> = [.other, .preferNotToSay]
+
+    private func toggle(_ condition: MenstrualCondition) {
+        if selection.contains(condition) {
+            selection.remove(condition)
+        } else if Self.exclusiveConditions.contains(condition) {
+            selection = [condition]
+        } else {
+            selection.subtract(Self.exclusiveConditions)
+            selection.insert(condition)
+        }
+    }
+
     private func optionRow(for condition: MenstrualCondition) -> some View {
         let isSelected = selection.contains(condition)
 
         return Button {
-            if isSelected {
-                selection.remove(condition)
-            } else {
-                selection.insert(condition)
-            }
+            toggle(condition)
         } label: {
             HStack {
                 Text(label(for: condition))
@@ -58,6 +72,10 @@ struct KnownConditionsStepView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(Color.secondary.opacity(0.3))
             )
+            // Without this, an unselected row's Color.clear background doesn't participate in
+            // hit-testing — only the opaque Text/Image glyphs do, so taps only register right on
+            // the label text instead of anywhere in the row.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)

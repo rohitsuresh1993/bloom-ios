@@ -44,6 +44,10 @@ struct CycleLengthBucketStepView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(Color.secondary.opacity(0.3))
             )
+            // Without this, an unselected row's Color.clear background doesn't participate in
+            // hit-testing — only the opaque Text/Image glyphs do, so taps only register right on
+            // the label text instead of anywhere in the row.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
