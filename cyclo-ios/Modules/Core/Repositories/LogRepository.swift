@@ -13,9 +13,11 @@ protocol LogRepositoring {
 final class LogRepository: LogRepositoring {
     private let modelContext: ModelContext
     private let calendar = Calendar.current
+    private let healthStore: HealthStoreWriting
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, healthStore: HealthStoreWriting = HealthKitExporter()) {
         self.modelContext = modelContext
+        self.healthStore = healthStore
     }
 
     func log(on date: Date) throws -> Log? {
@@ -32,6 +34,36 @@ final class LogRepository: LogRepositoring {
             modelContext.insert(log)
         }
         try modelContext.save()
+        exportToHealthKit(log)
+    }
+
+    // One-way, best-effort export of each non-nil category on this day's log — never blocks or
+    // fails the local save above, and never feeds anything back into Cyclo's own predictions
+    // (see ARCHITECTURE.md "HealthKit"). If `requestAuthorization()` was never called, the
+    // underlying `HKHealthStore.save` calls simply fail silently, which is fine here.
+    private func exportToHealthKit(_ log: Log) {
+        let healthStore = self.healthStore
+        let timestamp = log.timestamp
+        if let flowIntensity = log.flowIntensity {
+            Task {
+                try? await healthStore.exportMenstrualFlow(flowIntensity, on: timestamp, isCycleStart: false)
+            }
+        }
+        if let ovulationTestResult = log.ovulationTestResult {
+            Task {
+                try? await healthStore.exportOvulationTestResult(ovulationTestResult, on: timestamp)
+            }
+        }
+        if let sexualActivity = log.sexualActivity, !sexualActivity.isEmpty {
+            Task {
+                try? await healthStore.exportSexualActivity(sexualActivity, on: timestamp)
+            }
+        }
+        if let oralContraceptiveStatus = log.oralContraceptiveStatus {
+            Task {
+                try? await healthStore.exportContraceptiveUse(oralContraceptiveStatus, on: timestamp)
+            }
+        }
     }
 
     func logs(from startDate: Date, to endDate: Date) throws -> [Log] {
