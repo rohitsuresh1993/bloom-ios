@@ -1,12 +1,27 @@
 import HealthKit
 
 final class HealthKitExporter: HealthStoreWriting {
+    // Referenced by SettingsView's `@AppStorage` toggle rather than duplicating the string there.
+    static let exportEnabledDefaultsKey = "cyclo.healthKitExportEnabled"
+
     private let healthStore: HKHealthStore
     private let authorizationManager: HealthKitAuthorizationManager
+    private let userDefaults: UserDefaults
 
-    init(healthStore: HKHealthStore = HKHealthStore()) {
+    init(healthStore: HKHealthStore = HKHealthStore(), userDefaults: UserDefaults = .standard) {
         self.healthStore = healthStore
         self.authorizationManager = HealthKitAuthorizationManager(healthStore: healthStore)
+        self.userDefaults = userDefaults
+    }
+
+    // Defaults to `true` when the key has never been set, so existing users who already granted
+    // HealthKit permission see no behavior change until they explicitly turn this off in Settings.
+    // Plain `userDefaults.bool(forKey:)` would default to `false` for an unset key, which is wrong
+    // here.
+    private var isExportEnabled: Bool {
+        userDefaults.object(forKey: Self.exportEnabledDefaultsKey) == nil
+            ? true
+            : userDefaults.bool(forKey: Self.exportEnabledDefaultsKey)
     }
 
     var isHealthDataAvailable: Bool {
@@ -18,6 +33,7 @@ final class HealthKitExporter: HealthStoreWriting {
     }
 
     func exportMenstrualFlow(_ intensity: FlowIntensity?, on date: Date, isCycleStart: Bool) async throws {
+        guard isExportEnabled else { return }
         let sample = HKCategorySample(
             type: HKCategoryType(.menstrualFlow),
             value: Self.menstrualFlowValue(for: intensity).rawValue,
@@ -29,6 +45,7 @@ final class HealthKitExporter: HealthStoreWriting {
     }
 
     func exportIntermenstrualBleeding(on date: Date) async throws {
+        guard isExportEnabled else { return }
         let sample = HKCategorySample(
             type: HKCategoryType(.intermenstrualBleeding),
             value: HKCategoryValue.notApplicable.rawValue,
@@ -39,6 +56,7 @@ final class HealthKitExporter: HealthStoreWriting {
     }
 
     func exportOvulationTestResult(_ result: OvulationTestResult, on date: Date) async throws {
+        guard isExportEnabled else { return }
         let sample = HKCategorySample(
             type: HKCategoryType(.ovulationTestResult),
             value: Self.ovulationTestValue(for: result).rawValue,
@@ -49,6 +67,7 @@ final class HealthKitExporter: HealthStoreWriting {
     }
 
     func exportSexualActivity(_ activities: [SexualActivity], on date: Date) async throws {
+        guard isExportEnabled else { return }
         guard !activities.isEmpty, !activities.contains(.didntHaveSex) else { return }
 
         var metadata: [String: Any] = [:]
@@ -69,6 +88,7 @@ final class HealthKitExporter: HealthStoreWriting {
     }
 
     func exportContraceptiveUse(_ status: OralContraceptiveStatus, on date: Date) async throws {
+        guard isExportEnabled else { return }
         // HealthKit models contraceptive *method*, not day-to-day adherence — a missed dose is
         // still "oral contraceptive in use" for continuity, since HealthKit has no value for
         // "missed."
