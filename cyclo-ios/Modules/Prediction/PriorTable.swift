@@ -24,6 +24,27 @@ enum AgeBucket: CaseIterable {
     }
 }
 
+// Rough self-reported cycle-length bucket collected once at onboarding (see
+// Features/Onboarding) and stored in UserDefaults, not as a persisted model field — it's a
+// cold-start-only nudge that naturally stops mattering once the Bayesian blend in
+// CyclePredictionEngine has enough of the user's own cycle history to dominate the prior.
+enum SelfReportedCycleLengthBucket: String, CaseIterable {
+    case shorter
+    case typical
+    case longer
+    case notSure
+
+    // Flat nudge applied to the prior's mean cycle length — see PredictionConstants for why
+    // these are working defaults, not sourced per-bucket figures.
+    var meanCycleLengthDelta: Double {
+        switch self {
+        case .shorter: return PredictionConstants.selfReportedShorterCycleLengthDelta
+        case .longer: return PredictionConstants.selfReportedLongerCycleLengthDelta
+        case .typical, .notSure: return 0
+        }
+    }
+}
+
 // Developer-trained-offline lookup table, not ML: a richer starting prior than one flat
 // population constant, bundled frozen, never retrained, never phones home.
 //
@@ -57,12 +78,17 @@ enum PriorTable {
         .endometriosis: 1.2
     ]
 
-    static func lookup(ageBucket: AgeBucket, conditions: [MenstrualCondition]) -> CyclePrior {
+    static func lookup(
+        ageBucket: AgeBucket,
+        conditions: [MenstrualCondition],
+        selfReportedLengthBucket: SelfReportedCycleLengthBucket? = nil
+    ) -> CyclePrior {
         let base = baseRows[ageBucket] ?? baseRows[.twentiesToThirties]!
         let multiplier = conditions.compactMap { conditionVarianceMultiplier[$0] }.max() ?? 1.0
+        let lengthDelta = selfReportedLengthBucket?.meanCycleLengthDelta ?? 0
 
         return CyclePrior(
-            meanCycleLength: base.meanCycleLength,
+            meanCycleLength: base.meanCycleLength + lengthDelta,
             cycleLengthVariance: base.cycleLengthVariance * multiplier,
             meanLutealPhase: base.meanLutealPhase,
             lutealPhaseVariance: base.lutealPhaseVariance * multiplier
