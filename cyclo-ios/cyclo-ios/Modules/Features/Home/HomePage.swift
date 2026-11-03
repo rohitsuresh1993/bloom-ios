@@ -49,7 +49,15 @@ struct HomePage: View {
             switch kind {
             case .period:
                 LogPeriodView()
-            case .day:
+            case .symptoms:
+                LogSymptomsView()
+            case .mood:
+                LogMoodView()
+            case .flow:
+                LogFlowView()
+            case .activity:
+                LogActivityView()
+            case .more:
                 LogDayView()
             }
         }
@@ -299,35 +307,52 @@ private struct QuickLogRow: View {
     @ObservedObject var viewModel: HomeViewModel
 
     var body: some View {
-        HStack(spacing: 28) {
-            QuickLogButton(
-                systemImage: "drop.fill",
-                label: "Period",
-                isLogged: viewModel.periodLoggedToday,
-                tint: .cycloPrimary,
-                action: viewModel.tapPeriod
-            )
-            QuickLogButton(
-                systemImage: "note.text",
-                label: "Symptoms",
-                isLogged: viewModel.symptomsLoggedToday,
-                tint: .cycloSecondary,
-                action: viewModel.presentSymptomsSheet
-            )
-            QuickLogButton(
-                systemImage: "face.smiling",
-                label: "Mood",
-                isLogged: viewModel.moodLoggedToday,
-                tint: .cycloSecondary,
-                action: viewModel.presentMoodSheet
-            )
-            QuickLogButton(
-                systemImage: "figure.walk",
-                label: "Activity",
-                isLogged: viewModel.activityLoggedToday,
-                tint: .cycloSecondary,
-                action: viewModel.presentActivitySheet
-            )
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 20) {
+                QuickLogButton(
+                    systemImage: "drop.fill",
+                    label: "Period",
+                    isLogged: viewModel.periodLoggedToday,
+                    tint: .cycloPrimary,
+                    action: viewModel.tapPeriod
+                )
+                QuickLogButton(
+                    systemImage: "note.text",
+                    label: "Symptoms",
+                    isLogged: viewModel.symptomsLoggedToday,
+                    tint: .cycloSecondary,
+                    action: viewModel.presentSymptomsSheet
+                )
+                QuickLogButton(
+                    systemImage: "face.smiling",
+                    label: "Mood",
+                    isLogged: viewModel.moodLoggedToday,
+                    tint: .cycloSecondary,
+                    action: viewModel.presentMoodSheet
+                )
+                QuickLogButton(
+                    systemImage: "chart.bar.fill",
+                    label: "Flow",
+                    isLogged: viewModel.flowLoggedToday,
+                    tint: .cycloSecondary,
+                    action: viewModel.presentFlowSheet
+                )
+                QuickLogButton(
+                    systemImage: "figure.walk",
+                    label: "Activity",
+                    isLogged: viewModel.activityLoggedToday,
+                    tint: .cycloSecondary,
+                    action: viewModel.presentActivitySheet
+                )
+                QuickLogButton(
+                    systemImage: "ellipsis.circle",
+                    label: "More",
+                    isLogged: viewModel.moreLoggedToday,
+                    tint: .cycloSecondary,
+                    action: viewModel.presentMoreSheet
+                )
+            }
+            .padding(.horizontal, 4)
         }
     }
 }

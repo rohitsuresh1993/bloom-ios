@@ -49,9 +49,16 @@ final class HomeViewModel: ObservableObject {
     }
 
     // Which full-screen Logging sheet (built by the Logging feature) is presented over Home.
+    // One case per category screen (Symptoms/Mood/Flow/Activity each get their own — see
+    // CategoryLogViews.swift) rather than one combined "day" sheet; `.more` covers the
+    // remaining Log categories that don't have a dedicated quick-log button yet.
     enum ActiveSheet: Identifiable {
         case period
-        case day
+        case symptoms
+        case mood
+        case flow
+        case activity
+        case more
 
         var id: Self { self }
     }
@@ -84,7 +91,9 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var periodLoggedToday: Bool = false
     @Published private(set) var symptomsLoggedToday: Bool = false
     @Published private(set) var moodLoggedToday: Bool = false
+    @Published private(set) var flowLoggedToday: Bool = false
     @Published private(set) var activityLoggedToday: Bool = false
+    @Published private(set) var moreLoggedToday: Bool = false
     @Published var activeSheet: ActiveSheet?
     @Published var errorMessage: String?
 
@@ -140,7 +149,9 @@ final class HomeViewModel: ObservableObject {
             let todaysLogValue = try logRepository.log(on: today)
             symptomsLoggedToday = !(todaysLogValue?.symptoms?.isEmpty ?? true)
             moodLoggedToday = !(todaysLogValue?.mood?.isEmpty ?? true)
+            flowLoggedToday = todaysLogValue?.flowIntensity != nil
             activityLoggedToday = !(todaysLogValue?.physicalActivity?.isEmpty ?? true)
+            moreLoggedToday = Self.hasMoreCategoriesLogged(todaysLogValue)
             todaysChips = Self.chips(for: todaysLogValue)
 
             guard hasCycleData else {
@@ -271,13 +282,30 @@ final class HomeViewModel: ObservableObject {
     // Opens the real Logging feature's screens (Modules/Features/Logging) as sheets, rather than
     // mutating repositories directly here — that interim fast path is gone now that Logging
     // exists. HomePage calls `refresh()` on dismiss so the ring/fertility/chip state picks up
-    // whatever was just logged.
+    // whatever was just logged. Each category opens its own screen (CategoryLogViews.swift)
+    // instead of one shared combined form.
     func tapPeriod() { activeSheet = .period }
-    func presentSymptomsSheet() { activeSheet = .day }
-    func presentMoodSheet() { activeSheet = .day }
-    func presentActivitySheet() { activeSheet = .day }
+    func presentSymptomsSheet() { activeSheet = .symptoms }
+    func presentMoodSheet() { activeSheet = .mood }
+    func presentFlowSheet() { activeSheet = .flow }
+    func presentActivitySheet() { activeSheet = .activity }
+    func presentMoreSheet() { activeSheet = .more }
 
     // MARK: - Private helpers
+
+    // Drives the "More" quick-log button's logged-today dot — true if any of the categories
+    // without their own dedicated screen (see CategoryLogViews.swift) has a value today.
+    private static func hasMoreCategoriesLogged(_ log: Log?) -> Bool {
+        guard let log else { return false }
+        return !(log.sexualActivity?.isEmpty ?? true)
+            || log.sexDrive != nil
+            || log.vaginalDischarge != nil
+            || log.ovulationTestResult != nil
+            || log.pregnancyTest != nil
+            || log.oralContraceptiveStatus != nil
+            || !(log.digestionAndStool?.isEmpty ?? true)
+            || !(log.other?.isEmpty ?? true)
+    }
 
     private static func periodCovers(day: Date, log: PeriodLog, calendar: Calendar) -> Bool {
         let dayStart = calendar.startOfDay(for: day)

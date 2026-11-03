@@ -17,10 +17,18 @@
 
 import SwiftUI
 
-/// A `Log` category enum, as displayed by the Logging feature's chip pickers.
+/// A `Log` category enum, as displayed by the Logging feature's pickers (chip-based here, or
+/// row-based in CategoryOptionSections.swift).
 protocol LogCategoryOption: Hashable {
     static var allOptions: [Self] { get }
     var displayName: String { get }
+    /// SF Symbol name for row-based pickers. Defaulted to nil (no icon yet) so existing
+    /// `LogCategoryOption` conformances don't need to change until icons are chosen per case.
+    var iconSystemName: String? { get }
+}
+
+extension LogCategoryOption {
+    var iconSystemName: String? { nil }
 }
 
 struct SingleSelectChipSection<Option: LogCategoryOption>: View {

@@ -44,6 +44,7 @@ struct PeriodDayRangeCalendar: View {
             Button(action: { shiftMonth(by: -1) }) {
                 Image(systemName: "chevron.left")
             }
+            .buttonStyle(.plain)
             Spacer()
             Text(displayedMonth.formatted(.dateTime.month(.wide).year()))
                 .font(.subheadline.weight(.semibold))
@@ -51,8 +52,14 @@ struct PeriodDayRangeCalendar: View {
             Button(action: { shiftMonth(by: 1) }) {
                 Image(systemName: "chevron.right")
             }
+            .buttonStyle(.plain)
             .disabled(isNextMonthDisabled)
         }
+        // Matches the day grid's fix below: unstyled Buttons sharing this view's single
+        // Form/List row would pick up the row's own tap handling instead of acting as
+        // independent controls, which is what made the chevrons stop responding after the
+        // first tap.
+        .contentShape(Rectangle())
     }
 
     private var weekdaySymbolsRow: some View {
