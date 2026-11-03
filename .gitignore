@@ -66,3 +66,6 @@ fastlane/test_output
 
 *.env
 __pycache__/
+
+# Local-only HTML mockups/previews — not shipped, not checked in
+/mockups/
