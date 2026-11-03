@@ -69,3 +69,10 @@ __pycache__/
 
 # Local-only HTML mockups/previews — not shipped, not checked in
 /mockups/
+
+# Personal productivity-plugin scaffolding (tasks/dashboard) — not part of the app
+/TASKS.md
+/dashboard.html
+
+# Claude Code worktree scratch space (parallel-agent git worktrees)
+/.claude/
