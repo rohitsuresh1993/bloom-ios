@@ -91,7 +91,13 @@ struct PeriodDayRangeCalendar: View {
                 .frame(maxWidth: .infinity, minHeight: 36)
                 .background(isSelected ? Color.cycloPrimary : Color.clear)
                 .clipShape(Circle())
+                .contentShape(Circle())
         }
+        // .plain is required here: inside a Form/List row, an unstyled Button picks up the
+        // row's own tap-target/selection behavior, which — with ~35 Buttons packed into one
+        // LazyVGrid row via Section — was causing a single tap to toggle every day in the grid
+        // instead of just the tapped one.
+        .buttonStyle(.plain)
         .disabled(isFuture)
     }
 
