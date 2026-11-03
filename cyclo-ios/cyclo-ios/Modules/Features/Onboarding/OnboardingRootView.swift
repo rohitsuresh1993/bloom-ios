@@ -5,6 +5,7 @@ import SwiftUI
 // deep-linkable destinations, so a simple switch over an ordered enum is the least machinery
 // that does the job.
 enum OnboardingStep: Int, CaseIterable {
+    case name
     case lastPeriodStart
     case cycleLengthBucket
     case dateOfBirth
@@ -15,7 +16,7 @@ enum OnboardingStep: Int, CaseIterable {
 struct OnboardingRootView: View {
     @Environment(\.modelContext) private var modelContext
     @StateObject private var viewModel = OnboardingViewModel()
-    @State private var step: OnboardingStep = .lastPeriodStart
+    @State private var step: OnboardingStep = .name
 
     var body: some View {
         VStack(spacing: 24) {
@@ -26,6 +27,8 @@ struct OnboardingRootView: View {
 
             Group {
                 switch step {
+                case .name:
+                    NameStepView(name: $viewModel.name)
                 case .lastPeriodStart:
                     LastPeriodStepView(selectedDays: $viewModel.lastPeriodDays)
                 case .cycleLengthBucket:
@@ -51,7 +54,7 @@ struct OnboardingRootView: View {
             Spacer(minLength: 0)
 
             HStack {
-                if step != .lastPeriodStart {
+                if step != .name {
                     Button("Back", action: goBack)
                 }
 
@@ -68,6 +71,8 @@ struct OnboardingRootView: View {
 
     private var canContinue: Bool {
         switch step {
+        case .name:
+            return !viewModel.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .lastPeriodStart:
             return !viewModel.lastPeriodDays.isEmpty
         case .cycleLengthBucket:

@@ -10,6 +10,7 @@ final class OnboardingViewModel: ObservableObject {
     static let cycleLengthBucketDefaultsKey = "cyclo.selfReportedCycleLengthBucket"
     static let onboardingCompletedDefaultsKey = "cyclo.onboardingCompleted"
 
+    @Published var name: String = ""
     @Published var lastPeriodDays: Set<Date> = []
     @Published var cycleLengthBucket: SelfReportedCycleLengthBucket?
     @Published var dateOfBirth: Date = Calendar.current.date(byAdding: .year, value: -25, to: Date()) ?? Date()
@@ -58,7 +59,7 @@ final class OnboardingViewModel: ObservableObject {
             _ = try cycleRepository.logPeriod(start: start, end: end, for: user)
         }
         _ = try userRepository.updateProfile(
-            name: user.name,
+            name: name,
             dateOfBirth: dateOfBirth,
             knownConditions: Array(knownConditions)
         )
