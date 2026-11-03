@@ -45,8 +45,13 @@ struct HomePage: View {
                 userRepository: UserRepository(modelContext: modelContext)
             )
         }
-        .sheet(item: $viewModel.activeSheet) { kind in
-            QuickLogPickerSheet(kind: kind, viewModel: viewModel)
+        .sheet(item: $viewModel.activeSheet, onDismiss: viewModel.refresh) { kind in
+            switch kind {
+            case .period:
+                LogPeriodView()
+            case .day:
+                LogDayView()
+            }
         }
         .alert(
             "Something went wrong",
@@ -326,45 +331,6 @@ private struct QuickLogButton: View {
             }
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct QuickLogPickerSheet: View {
-    let kind: HomeViewModel.QuickLogSheetKind
-    @ObservedObject var viewModel: HomeViewModel
-
-    var body: some View {
-        NavigationStack {
-            List {
-                switch kind {
-                case .symptoms:
-                    ForEach(HomeViewModel.quickLogSymptomOptions, id: \.self) { symptom in
-                        Button(HomeViewModel.humanizeCaseName(String(describing: symptom))) {
-                            viewModel.logSymptom(symptom)
-                        }
-                    }
-                case .mood:
-                    ForEach(HomeViewModel.quickLogMoodOptions, id: \.self) { mood in
-                        Button(HomeViewModel.humanizeCaseName(String(describing: mood))) {
-                            viewModel.logMood(mood)
-                        }
-                    }
-                case .activity:
-                    ForEach(HomeViewModel.quickLogActivityOptions, id: \.self) { activity in
-                        Button(HomeViewModel.humanizeCaseName(String(describing: activity))) {
-                            viewModel.logActivity(activity)
-                        }
-                    }
-                }
-            }
-            .navigationTitle(kind.title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { viewModel.activeSheet = nil }
-                }
-            }
-        }
-        .presentationDetents([.medium])
     }
 }
 

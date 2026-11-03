@@ -42,20 +42,12 @@ final class HomeViewModel: ObservableObject {
         let text: String
     }
 
-    enum QuickLogSheetKind: Identifiable {
-        case symptoms
-        case mood
-        case activity
+    // Which full-screen Logging sheet (built by the Logging feature) is presented over Home.
+    enum ActiveSheet: Identifiable {
+        case period
+        case day
 
         var id: Self { self }
-
-        var title: String {
-            switch self {
-            case .symptoms: return "Log Symptoms"
-            case .mood: return "Log Mood"
-            case .activity: return "Log Activity"
-            }
-        }
     }
 
     // Week strip
@@ -85,7 +77,7 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var symptomsLoggedToday: Bool = false
     @Published private(set) var moodLoggedToday: Bool = false
     @Published private(set) var activityLoggedToday: Bool = false
-    @Published var activeSheet: QuickLogSheetKind?
+    @Published var activeSheet: ActiveSheet?
     @Published var errorMessage: String?
 
     // MARK: - Dependencies (handed in by HomePage via `configure`, since HomePage must stay
@@ -131,7 +123,6 @@ final class HomeViewModel: ObservableObject {
             // `allPeriodLogs()` is sorted newest-start-first.
             let allPeriods = try cycleRepository.allPeriodLogs()
             hasCycleData = !allPeriods.isEmpty
-            isPeriodOpen = allPeriods.first.map { $0.startDate == $0.endDate } ?? false
             periodLoggedToday = allPeriods.contains { Self.periodCovers(day: today, log: $0, calendar: calendar) }
 
             weekDays = Self.buildWeekDays(today: today, periods: allPeriods, calendar: calendar)
@@ -267,80 +258,14 @@ final class HomeViewModel: ObservableObject {
 
     // MARK: - Quick log row
 
-    @Published private(set) var isPeriodOpen: Bool = false
-
-    func tapPeriod() {
-        guard let cycleRepository else { return }
-        do {
-            let logs = try cycleRepository.allPeriodLogs()
-            if let mostRecent = logs.first, mostRecent.startDate == mostRecent.endDate {
-                try cycleRepository.endPeriod(mostRecent, on: Date())
-            } else {
-                _ = try cycleRepository.startPeriod(on: Date(), for: currentUser)
-            }
-            refresh()
-        } catch {
-            errorMessage = "Couldn't update your period log."
-        }
-    }
-
-    func presentSymptomsSheet() { activeSheet = .symptoms }
-    func presentMoodSheet() { activeSheet = .mood }
-    func presentActivitySheet() { activeSheet = .activity }
-
-    func logSymptom(_ symptom: Symptoms) {
-        appendToTodaysLog { log in
-            var updated = log.symptoms ?? []
-            if !updated.contains(symptom) { updated.append(symptom) }
-            log.symptoms = updated
-        }
-    }
-
-    func logMood(_ mood: Mood) {
-        appendToTodaysLog { log in
-            var updated = log.mood ?? []
-            if !updated.contains(mood) { updated.append(mood) }
-            log.mood = updated
-        }
-    }
-
-    func logActivity(_ activity: PhysicalActivity) {
-        appendToTodaysLog { log in
-            var updated = log.physicalActivity ?? []
-            if !updated.contains(activity) { updated.append(activity) }
-            log.physicalActivity = updated
-        }
-    }
-
-    private func appendToTodaysLog(_ mutate: (Log) -> Void) {
-        guard let logRepository else { return }
-        do {
-            let existing = try logRepository.log(on: Date())
-            let log = existing ?? Log(timestamp: Date())
-            mutate(log)
-            try logRepository.saveLog(log)
-            activeSheet = nil
-            refresh()
-        } catch {
-            errorMessage = "Couldn't save your log."
-        }
-    }
-
-    // Deliberately small, hand-picked subsets (rather than every raw case, e.g. skipping
-    // `.didntExercise`) — this quick-log sheet is an interim fast path ahead of the real Logging
-    // feature, not the final picker UI.
-    static let quickLogSymptomOptions: [Symptoms] = [
-        .cramps, .tenderBreasts, .headache, .acne, .backache, .fatigue,
-        .cravings, .insomnia, .abdominalPain, .vaginalItching, .vaginalDryness
-    ]
-    static let quickLogMoodOptions: [Mood] = [
-        .calm, .happy, .energetic, .frisky, .moodSwings, .irritated, .sad,
-        .anxious, .depressed, .feelingGuilty, .obsessiveThoughts, .lowEnergy,
-        .apathetic, .confused, .verySelfCritical
-    ]
-    static let quickLogActivityOptions: [PhysicalActivity] = [
-        .yoga, .gym, .aerobicsAndDancing, .swimming, .teamSports, .running, .cycling, .walking
-    ]
+    // Opens the real Logging feature's screens (Modules/Features/Logging) as sheets, rather than
+    // mutating repositories directly here — that interim fast path is gone now that Logging
+    // exists. HomePage calls `refresh()` on dismiss so the ring/fertility/chip state picks up
+    // whatever was just logged.
+    func tapPeriod() { activeSheet = .period }
+    func presentSymptomsSheet() { activeSheet = .day }
+    func presentMoodSheet() { activeSheet = .day }
+    func presentActivitySheet() { activeSheet = .day }
 
     // MARK: - Private helpers
 
