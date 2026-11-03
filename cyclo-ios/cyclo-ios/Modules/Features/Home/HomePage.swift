@@ -18,7 +18,7 @@ struct HomePage: View {
             VStack(spacing: 24) {
                 TopBar()
 
-                WeekStripView(days: viewModel.weekDays)
+                WeekCarouselView(weeks: viewModel.weeks, currentWeekID: viewModel.currentWeekID)
 
                 cycleRingSection
 
@@ -99,6 +99,39 @@ struct HomePage: View {
 }
 
 // MARK: - Week strip
+
+// Horizontally-paging carousel of weeks (8 back, 1 forward, from HomeViewModel.buildWeeks) —
+// swiping goes somewhere, rather than always showing just the current calendar week.
+private struct WeekCarouselView: View {
+    let weeks: [HomeViewModel.WeekItem]
+    let currentWeekID: HomeViewModel.WeekItem.ID?
+    @State private var scrollPosition: HomeViewModel.WeekItem.ID?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 0) {
+                ForEach(weeks) { week in
+                    WeekStripView(days: week.days)
+                        .containerRelativeFrame(.horizontal)
+                        .id(week.id)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $scrollPosition)
+        .onAppear {
+            if scrollPosition == nil {
+                scrollPosition = currentWeekID
+            }
+        }
+        .onChange(of: currentWeekID) { _, newValue in
+            if scrollPosition == nil {
+                scrollPosition = newValue
+            }
+        }
+    }
+}
 
 private struct WeekStripView: View {
     let days: [HomeViewModel.WeekDayItem]

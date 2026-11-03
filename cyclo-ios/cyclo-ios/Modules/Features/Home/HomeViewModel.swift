@@ -25,6 +25,12 @@ final class HomeViewModel: ObservableObject {
         let hasPeriodFlow: Bool
     }
 
+    // One page of the horizontally-scrollable week carousel.
+    struct WeekItem: Identifiable {
+        let id = UUID()
+        let days: [WeekDayItem]
+    }
+
     struct DayRange {
         let start: Double
         let end: Double
@@ -51,7 +57,9 @@ final class HomeViewModel: ObservableObject {
     }
 
     // Week strip
-    @Published private(set) var weekDays: [WeekDayItem] = []
+    @Published private(set) var weeks: [WeekItem] = []
+    // Index into `weeks` of the week containing today — the carousel scrolls here initially.
+    @Published private(set) var currentWeekID: WeekItem.ID?
 
     // Cycle-phase ring
     @Published private(set) var hasCycleData: Bool = false
@@ -125,7 +133,9 @@ final class HomeViewModel: ObservableObject {
             hasCycleData = !allPeriods.isEmpty
             periodLoggedToday = allPeriods.contains { Self.periodCovers(day: today, log: $0, calendar: calendar) }
 
-            weekDays = Self.buildWeekDays(today: today, periods: allPeriods, calendar: calendar)
+            let builtWeeks = Self.buildWeeks(today: today, periods: allPeriods, calendar: calendar)
+            weeks = builtWeeks.weeks
+            currentWeekID = builtWeeks.todayWeekID
 
             let todaysLogValue = try logRepository.log(on: today)
             symptomsLoggedToday = !(todaysLogValue?.symptoms?.isEmpty ?? true)
@@ -276,22 +286,45 @@ final class HomeViewModel: ObservableObject {
         return dayStart >= start && dayStart <= end
     }
 
-    private static func buildWeekDays(today: Date, periods: [PeriodLog], calendar: Calendar) -> [WeekDayItem] {
+    // Builds a scrollable carousel of weeks (8 weeks back, 1 week forward, plus today's own
+    // week) rather than just the current calendar week, so swiping the strip actually goes
+    // somewhere — per the "should be scrollable horizontally like a carousel" request.
+    private static func buildWeeks(
+        today: Date, periods: [PeriodLog], calendar: Calendar
+    ) -> (weeks: [WeekItem], todayWeekID: WeekItem.ID?) {
         let weekday = calendar.component(.weekday, from: today)
-        guard let startOfWeek = calendar.date(byAdding: .day, value: -(weekday - 1), to: calendar.startOfDay(for: today)) else {
-            return []
+        guard let startOfTodaysWeek = calendar.date(
+            byAdding: .day, value: -(weekday - 1), to: calendar.startOfDay(for: today)
+        ) else {
+            return ([], nil)
         }
+
+        let weeksBack = 8
+        let weeksForward = 1
         let letterFormatter = DateFormatter()
         letterFormatter.dateFormat = "E"
 
-        return (0..<7).compactMap { offset -> WeekDayItem? in
-            guard let date = calendar.date(byAdding: .day, value: offset, to: startOfWeek) else { return nil }
-            let letter = String(letterFormatter.string(from: date).prefix(1))
-            let number = calendar.component(.day, from: date)
-            let isToday = calendar.isDate(date, inSameDayAs: today)
-            let hasFlow = periods.contains { periodCovers(day: date, log: $0, calendar: calendar) }
-            return WeekDayItem(date: date, letter: letter, number: number, isToday: isToday, hasPeriodFlow: hasFlow)
+        var weeks: [WeekItem] = []
+        var todayWeekID: WeekItem.ID?
+
+        for weekOffset in -weeksBack...weeksForward {
+            guard let weekStart = calendar.date(byAdding: .day, value: weekOffset * 7, to: startOfTodaysWeek) else { continue }
+
+            let days: [WeekDayItem] = (0..<7).compactMap { dayOffset -> WeekDayItem? in
+                guard let date = calendar.date(byAdding: .day, value: dayOffset, to: weekStart) else { return nil }
+                let letter = String(letterFormatter.string(from: date).prefix(1))
+                let number = calendar.component(.day, from: date)
+                let isToday = calendar.isDate(date, inSameDayAs: today)
+                let hasFlow = periods.contains { periodCovers(day: date, log: $0, calendar: calendar) }
+                return WeekDayItem(date: date, letter: letter, number: number, isToday: isToday, hasPeriodFlow: hasFlow)
+            }
+
+            let week = WeekItem(days: days)
+            weeks.append(week)
+            if weekOffset == 0 { todayWeekID = week.id }
         }
+
+        return (weeks, todayWeekID)
     }
 
     private static func averagePeriodLength(periods: [PeriodLog], calendar: Calendar) -> Double {

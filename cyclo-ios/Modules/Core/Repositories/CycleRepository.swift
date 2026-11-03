@@ -9,6 +9,7 @@ protocol CycleRepositoring {
     func startPeriod(on date: Date, for user: User?) throws -> PeriodLog
     func endPeriod(_ periodLog: PeriodLog, on endDate: Date) throws
     func logPeriod(start: Date, end: Date, for user: User?) throws -> PeriodLog
+    func updatePeriodDates(_ periodLog: PeriodLog, start: Date, end: Date) throws
     func allPeriodLogs() throws -> [PeriodLog]
     func delete(_ periodLog: PeriodLog) throws
 }
@@ -63,6 +64,24 @@ final class CycleRepository: CycleRepositoring {
             try? await healthStore.exportMenstrualFlow(nil, on: start, isCycleStart: true)
         }
         return periodLog
+    }
+
+    // Used by the calendar-based day picker in LogPeriodView/Onboarding, which edits an
+    // already-loaded PeriodLog's full date range (possibly moving the start date earlier, not
+    // just extending the end date the way `endPeriod` does) rather than always creating a new
+    // one. Re-exports the same "cycle start" marker as `startPeriod`/`logPeriod` on the (possibly
+    // new) start day — HealthKit samples are immutable once written, so an edited period's
+    // earlier export isn't retracted, consistent with this being a one-way, best-effort mirror
+    // rather than an authoritative sync (see ARCHITECTURE.md "HealthKit").
+    func updatePeriodDates(_ periodLog: PeriodLog, start: Date, end: Date) throws {
+        try Self.validate(startDate: start, endDate: end)
+        periodLog.startDate = start
+        periodLog.endDate = end
+        try modelContext.save()
+        let healthStore = self.healthStore
+        Task {
+            try? await healthStore.exportMenstrualFlow(nil, on: start, isCycleStart: true)
+        }
     }
 
     func allPeriodLogs() throws -> [PeriodLog] {

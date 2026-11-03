@@ -10,7 +10,7 @@ final class OnboardingViewModel: ObservableObject {
     static let cycleLengthBucketDefaultsKey = "cyclo.selfReportedCycleLengthBucket"
     static let onboardingCompletedDefaultsKey = "cyclo.onboardingCompleted"
 
-    @Published var lastPeriodStartDate: Date = Date()
+    @Published var lastPeriodDays: Set<Date> = []
     @Published var cycleLengthBucket: SelfReportedCycleLengthBucket?
     @Published var dateOfBirth: Date = Calendar.current.date(byAdding: .year, value: -25, to: Date()) ?? Date()
     @Published var knownConditions: Set<MenstrualCondition> = []
@@ -44,7 +44,9 @@ final class OnboardingViewModel: ObservableObject {
         }
     }
 
-    // Anchors the first PeriodLog, writes the self-reported profile, stashes the cold-start
+    // Anchors the first PeriodLog (as an already-ended historical period, not an open/ongoing
+    // one — using `logPeriod` with the full day selection's start/end, not `startPeriod`, since
+    // this period already happened), writes the self-reported profile, stashes the cold-start
     // cycle-length bucket, and flips the onboarding-completed flag — in that order, so the flag
     // only flips once everything else has actually saved.
     func completeOnboarding(modelContext: ModelContext) throws {
@@ -52,7 +54,9 @@ final class OnboardingViewModel: ObservableObject {
         let cycleRepository = CycleRepository(modelContext: modelContext)
 
         let user = try userRepository.currentUser()
-        _ = try cycleRepository.startPeriod(on: lastPeriodStartDate, for: user)
+        if let start = lastPeriodDays.min(), let end = lastPeriodDays.max() {
+            _ = try cycleRepository.logPeriod(start: start, end: end, for: user)
+        }
         _ = try userRepository.updateProfile(
             name: user.name,
             dateOfBirth: dateOfBirth,

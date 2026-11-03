@@ -2,15 +2,12 @@
 //  LogPeriodView.swift
 //  cyclo-ios
 //
-//  Period logging screen. An "open" period is the most recent `PeriodLog` where
-//  `startDate == endDate`, per `CycleRepository.startPeriod`'s own doc comment: it sets
-//  `endDate = startDate` initially and expects `endPeriod` to correct it later.
-//  - No open period: shows a "Start Period" action (`CycleRepository.startPeriod(on:for:)`).
-//  - An open period: shows a date picker and "End Period" action
-//    (`CycleRepository.endPeriod(_:on:)`).
-//  - Either way, a secondary "Log a Past Period" action backfills a period where both dates
-//    are already known (`CycleRepository.logPeriod(start:end:for:)`), via `LogPastPeriodView`
-//    below.
+//  Period logging screen — a calendar where the user taps each day of a period, rather than a
+//  "Start Period"/"End Period" button flow. On appear, pre-selects the most recent PeriodLog's
+//  date range for editing (so continuing an ongoing period, or correcting one, is just tapping
+//  more days); "Log a Different Period" clears the selection to log an unrelated one instead.
+//  This single screen covers both the live-logging and backfill cases the old button-driven
+//  flow split into two — same calendar view either way.
 //
 //  Root entry point: present `LogPeriodView()` from anywhere (e.g. via `.sheet`).
 //
@@ -22,10 +19,9 @@ struct LogPeriodView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @State private var openPeriod: PeriodLog?
-    @State private var endDate = Date()
+    @State private var selectedDays: Set<Date> = []
+    @State private var editingPeriod: PeriodLog?
     @State private var errorMessage: String?
-    @State private var isShowingBackfill = false
 
     private var cycleRepository: CycleRepository {
         CycleRepository(modelContext: modelContext)
@@ -47,135 +43,28 @@ struct LogPeriodView: View {
                 }
 
                 Section {
-                    if let openPeriod {
-                        DatePicker(
-                            "Period ended",
-                            selection: $endDate,
-                            in: Calendar.current.startOfDay(for: openPeriod.startDate)...,
-                            displayedComponents: .date
-                        )
-
-                        Button(action: endOpenPeriod) {
-                            Text("End Period")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.cycloPrimary)
-                    } else {
-                        Button(action: startNewPeriod) {
-                            Text("Start Period")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.cycloPrimary)
-                    }
+                    PeriodDayRangeCalendar(
+                        selectedDays: $selectedDays,
+                        initialMonth: selectedDays.min() ?? Date()
+                    )
+                    .padding(.vertical, 4)
                 } header: {
-                    Text(openPeriod == nil ? "No Period in Progress" : "Period in Progress")
-                } footer: {
-                    if let openPeriod {
-                        Text("Started \(openPeriod.startDate.formatted(date: .abbreviated, time: .omitted)).")
-                    }
+                    Text(editingPeriod == nil ? "Tap each day of your period" : "Editing your most recent period")
                 }
 
-                Section {
-                    Button("Log a Past Period") {
-                        isShowingBackfill = true
+                if editingPeriod != nil {
+                    Section {
+                        Button("Log a Different Period") {
+                            editingPeriod = nil
+                            selectedDays = []
+                        }
+                        .tint(Color.cycloSecondary)
+                    } footer: {
+                        Text("Clears the current selection so you can log a separate period instead of editing this one.")
                     }
-                    .tint(Color.cycloSecondary)
-                } footer: {
-                    Text("Backfill a period you forgot to log at the time, with both the start and end dates already known.")
                 }
             }
             .navigationTitle("Period")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .onAppear(perform: loadOpenPeriod)
-            .sheet(isPresented: $isShowingBackfill) {
-                LogPastPeriodView(onSave: loadOpenPeriod)
-            }
-        }
-    }
-
-    private func loadOpenPeriod() {
-        do {
-            let periods = try cycleRepository.allPeriodLogs()
-            openPeriod = periods.first { $0.startDate == $0.endDate }
-            if let openPeriod {
-                endDate = max(Date(), openPeriod.startDate)
-            }
-            errorMessage = nil
-        } catch {
-            errorMessage = "Couldn't load period history: \(error.localizedDescription)"
-        }
-    }
-
-    private func startNewPeriod() {
-        do {
-            let user = try userRepository.currentUser()
-            openPeriod = try cycleRepository.startPeriod(on: Date(), for: user)
-            endDate = openPeriod?.startDate ?? Date()
-            errorMessage = nil
-        } catch {
-            errorMessage = "Couldn't start period: \(error.localizedDescription)"
-        }
-    }
-
-    private func endOpenPeriod() {
-        guard let openPeriod else { return }
-        do {
-            try cycleRepository.endPeriod(openPeriod, on: endDate)
-            self.openPeriod = nil
-            errorMessage = nil
-        } catch {
-            errorMessage = "Couldn't end period: \(error.localizedDescription)"
-        }
-    }
-}
-
-/// Backfills a period where both the start and end dates are already known. Presented as a
-/// sheet from `LogPeriodView`; not meant to be a standalone entry point.
-private struct LogPastPeriodView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
-
-    let onSave: () -> Void
-
-    @State private var startDate = Date()
-    @State private var endDate = Date()
-    @State private var errorMessage: String?
-
-    private var cycleRepository: CycleRepository {
-        CycleRepository(modelContext: modelContext)
-    }
-
-    private var userRepository: UserRepository {
-        UserRepository(modelContext: modelContext)
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
-                    }
-                }
-
-                DatePicker("Start date", selection: $startDate, displayedComponents: .date)
-                DatePicker(
-                    "End date",
-                    selection: $endDate,
-                    in: Calendar.current.startOfDay(for: startDate)...,
-                    displayedComponents: .date
-                )
-            }
-            .navigationTitle("Log a Past Period")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -185,20 +74,51 @@ private struct LogPastPeriodView: View {
                     Button("Save", action: save)
                         .fontWeight(.semibold)
                         .tint(Color.cycloPrimary)
+                        .disabled(selectedDays.isEmpty)
                 }
             }
+            .onAppear(perform: loadMostRecentPeriod)
+        }
+    }
+
+    private func loadMostRecentPeriod() {
+        do {
+            let periods = try cycleRepository.allPeriodLogs()
+            guard let mostRecent = periods.first else { return }
+            editingPeriod = mostRecent
+            selectedDays = Self.daysBetween(mostRecent.startDate, mostRecent.endDate)
+            errorMessage = nil
+        } catch {
+            errorMessage = "Couldn't load period history: \(error.localizedDescription)"
         }
     }
 
     private func save() {
+        guard let start = selectedDays.min(), let end = selectedDays.max() else { return }
         do {
-            let user = try userRepository.currentUser()
-            _ = try cycleRepository.logPeriod(start: startDate, end: endDate, for: user)
-            onSave()
+            if let editingPeriod {
+                try cycleRepository.updatePeriodDates(editingPeriod, start: start, end: end)
+            } else {
+                let user = try userRepository.currentUser()
+                _ = try cycleRepository.logPeriod(start: start, end: end, for: user)
+            }
             dismiss()
         } catch {
             errorMessage = "Couldn't save this period: \(error.localizedDescription)"
         }
+    }
+
+    private static func daysBetween(_ start: Date, _ end: Date) -> Set<Date> {
+        let calendar = Calendar.current
+        var days: Set<Date> = []
+        var current = calendar.startOfDay(for: start)
+        let endDay = calendar.startOfDay(for: end)
+        while current <= endDay {
+            days.insert(current)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+        return days
     }
 }
 

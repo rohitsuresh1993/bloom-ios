@@ -27,7 +27,7 @@ struct OnboardingRootView: View {
             Group {
                 switch step {
                 case .lastPeriodStart:
-                    LastPeriodStepView(date: $viewModel.lastPeriodStartDate)
+                    LastPeriodStepView(selectedDays: $viewModel.lastPeriodDays)
                 case .cycleLengthBucket:
                     CycleLengthBucketStepView(selection: $viewModel.cycleLengthBucket)
                 case .dateOfBirth:
@@ -68,9 +68,11 @@ struct OnboardingRootView: View {
 
     private var canContinue: Bool {
         switch step {
+        case .lastPeriodStart:
+            return !viewModel.lastPeriodDays.isEmpty
         case .cycleLengthBucket:
             return viewModel.cycleLengthBucket != nil
-        case .lastPeriodStart, .dateOfBirth, .knownConditions, .signInWithApple:
+        case .dateOfBirth, .knownConditions, .signInWithApple:
             return true
         }
     }
