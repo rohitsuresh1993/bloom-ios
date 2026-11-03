@@ -7,6 +7,9 @@ protocol LogRepositoring {
     func log(on date: Date) throws -> Log?
     func saveLog(_ log: Log) throws
     func logs(from startDate: Date, to endDate: Date) throws -> [Log]
+    // Every Log, newest first — e.g. for a full-data export, matching
+    // CycleRepository.allPeriodLogs()'s convention.
+    func allLogs() throws -> [Log]
     func delete(_ log: Log) throws
 }
 
@@ -71,6 +74,13 @@ final class LogRepository: LogRepositoring {
             predicate: #Predicate { $0.timestamp >= startDate && $0.timestamp <= endDate },
             sortBy: [SortDescriptor(\.timestamp)]
         )
+        return try modelContext.fetch(descriptor)
+    }
+
+    // Every Log, newest first — e.g. for a full-data export, matching
+    // CycleRepository.allPeriodLogs()'s convention.
+    func allLogs() throws -> [Log] {
+        let descriptor = FetchDescriptor<Log>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
         return try modelContext.fetch(descriptor)
     }
 

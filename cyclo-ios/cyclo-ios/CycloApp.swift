@@ -6,11 +6,23 @@ struct CycloApp: App {
     private let modelContainer = PersistenceController.makeContainer()
     private let appLockManager: AppLockManaging = AppLockManager()
 
+    // Mirrors SettingsView's own `@AppStorage` of the same key — set from the Appearance section.
+    @AppStorage("cyclo.colorSchemeOverride") private var colorSchemeOverride: String = "system"
+
+    private var resolvedColorScheme: ColorScheme? {
+        switch colorSchemeOverride {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             AppLockGateView(appLockManager: appLockManager) {
                 RootRouterView()
             }
+            .preferredColorScheme(resolvedColorScheme)
         }
         .modelContainer(modelContainer)
     }
