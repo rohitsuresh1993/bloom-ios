@@ -12,11 +12,16 @@ import Foundation
 struct HomePage: View {
     @Environment(\.modelContext) private var modelContext
     @StateObject private var viewModel = HomeViewModel()
+    @State private var showingProfile = false
+    @State private var showingSettings = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                TopBar()
+                TopBar(
+                    onProfileTapped: { showingProfile = true },
+                    onSettingsTapped: { showingSettings = true }
+                )
 
                 WeekCarouselView(weeks: viewModel.weeks, currentWeekID: viewModel.currentWeekID)
 
@@ -60,6 +65,12 @@ struct HomePage: View {
             case .more:
                 LogDayView()
             }
+        }
+        .sheet(isPresented: $showingProfile, onDismiss: viewModel.refresh) {
+            ProfileView()
+        }
+        .sheet(isPresented: $showingSettings, onDismiss: viewModel.refresh) {
+            SettingsView()
         }
         .alert(
             "Something went wrong",
