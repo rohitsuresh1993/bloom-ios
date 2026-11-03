@@ -28,4 +28,13 @@ enum PredictionConstants {
     // currently derived from the user's own FlowIntensity logs — a reasonable fixed default
     // until that refinement is worth the complexity.
     static let assumedMenstrualPhaseLength = 5.0
+
+    // Cold-start nudges applied to PriorTable's base mean cycle length from the onboarding
+    // self-reported bucket ("~28 days" / shorter / longer / not sure). Working defaults, not
+    // derived constants — a flat +/-3 days is a reasonable-sounding nudge, not a sourced figure.
+    // This only matters before the user has enough of their own cycle history for the Bayesian
+    // blend in CyclePredictionEngine to dominate the prior anyway, so the lack of rigor here is
+    // self-limiting.
+    static let selfReportedShorterCycleLengthDelta = -3.0
+    static let selfReportedLongerCycleLengthDelta = 3.0
 }
