@@ -70,6 +70,9 @@ __pycache__/
 # Local-only HTML mockups/previews — not shipped, not checked in
 /mockups/
 
+# Local-only manual testing checklists — not shipped, not checked in
+/testing/
+
 # Personal productivity-plugin scaffolding (tasks/dashboard) — not part of the app
 /TASKS.md
 /dashboard.html

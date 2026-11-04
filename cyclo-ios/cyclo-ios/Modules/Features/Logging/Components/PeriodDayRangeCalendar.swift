@@ -9,13 +9,18 @@ import SwiftUI
 // selection has gaps so that collapsing never happens silently.
 struct PeriodDayRangeCalendar: View {
     @Binding var selectedDays: Set<Date>
+    // Previously-logged period days outside the current selection (e.g. other periods in
+    // history) — shown with a lighter ring so the user can see their logging history while
+    // picking a new period, without it being confused for the active selection.
+    let loggedDays: Set<Date>
     @State private var displayedMonth: Date
 
     private let calendar = Calendar.current
     private let maxSelectableDate = Date()
 
-    init(selectedDays: Binding<Set<Date>>, initialMonth: Date = Date()) {
+    init(selectedDays: Binding<Set<Date>>, loggedDays: Set<Date> = [], initialMonth: Date = Date()) {
         self._selectedDays = selectedDays
+        self.loggedDays = loggedDays
         self._displayedMonth = State(initialValue: Calendar.current.startOfDay(for: initialMonth))
     }
 
@@ -87,7 +92,9 @@ struct PeriodDayRangeCalendar: View {
     }
 
     private func dayCell(_ day: Date) -> some View {
-        let isSelected = selectedDays.contains(calendar.startOfDay(for: day))
+        let normalized = calendar.startOfDay(for: day)
+        let isSelected = selectedDays.contains(normalized)
+        let isPreviouslyLogged = !isSelected && loggedDays.contains(normalized)
         let isFuture = day > maxSelectableDate
         return Button {
             toggle(day)
@@ -98,6 +105,10 @@ struct PeriodDayRangeCalendar: View {
                 .frame(maxWidth: .infinity, minHeight: 36)
                 .background(isSelected ? Color.cycloPrimary : Color.clear)
                 .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.cycloPrimary.opacity(0.5), lineWidth: isPreviouslyLogged ? 1.5 : 0)
+                )
                 .contentShape(Circle())
         }
         // .plain is required here: inside a Form/List row, an unstyled Button picks up the

@@ -20,6 +20,7 @@ struct LogPeriodView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedDays: Set<Date> = []
+    @State private var loggedDays: Set<Date> = []
     @State private var editingPeriod: PeriodLog?
     @State private var errorMessage: String?
 
@@ -45,6 +46,7 @@ struct LogPeriodView: View {
                 Section {
                     PeriodDayRangeCalendar(
                         selectedDays: $selectedDays,
+                        loggedDays: loggedDays,
                         initialMonth: selectedDays.min() ?? Date()
                     )
                     .padding(.vertical, 4)
@@ -84,6 +86,7 @@ struct LogPeriodView: View {
     private func loadMostRecentPeriod() {
         do {
             let periods = try cycleRepository.allPeriodLogs()
+            loggedDays = Set(periods.flatMap { Self.daysBetween($0.startDate, $0.endDate) })
             guard let mostRecent = periods.first else { return }
             editingPeriod = mostRecent
             selectedDays = Self.daysBetween(mostRecent.startDate, mostRecent.endDate)

@@ -267,13 +267,13 @@ private struct FertilityCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Fertility")
                 .font(.headline)
+            Text(data.statusSentence)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.cycloPrimary)
             Text("Fertile window: \(data.fertileWindowRangeText)")
                 .font(.subheadline)
             Text("Estimated ovulation: \(data.estimatedOvulationText)")
                 .font(.subheadline)
-            Text(data.statusSentence)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color.cycloPrimary)
             if data.isConfirmedByTest {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.seal.fill")
@@ -364,6 +364,10 @@ private struct QuickLogRow: View {
                 )
             }
             .padding(.horizontal, 4)
+            // The "logged today" badge sits in the top-trailing corner of each 56pt circle,
+            // offset further outward — without this top padding, the ScrollView clips its own
+            // content to the row's natural (badge-less) height and cuts the badge off.
+            .padding(.top, 6)
         }
     }
 }

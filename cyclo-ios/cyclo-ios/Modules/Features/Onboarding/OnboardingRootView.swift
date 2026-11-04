@@ -6,9 +6,9 @@ import SwiftUI
 // that does the job.
 enum OnboardingStep: Int, CaseIterable {
     case name
+    case dateOfBirth
     case lastPeriodStart
     case cycleLengthBucket
-    case dateOfBirth
     case knownConditions
     case signInWithApple
 }
@@ -17,6 +17,11 @@ struct OnboardingRootView: View {
     @Environment(\.modelContext) private var modelContext
     @StateObject private var viewModel = OnboardingViewModel()
     @State private var step: OnboardingStep = .name
+    @State private var navigationDirection: NavigationDirection = .forward
+
+    private enum NavigationDirection {
+        case forward, backward
+    }
 
     var body: some View {
         VStack(spacing: 24) {
@@ -29,18 +34,25 @@ struct OnboardingRootView: View {
                 switch step {
                 case .name:
                     NameStepView(name: $viewModel.name)
+                case .dateOfBirth:
+                    DateOfBirthStepView(date: $viewModel.dateOfBirth)
                 case .lastPeriodStart:
                     LastPeriodStepView(selectedDays: $viewModel.lastPeriodDays)
                 case .cycleLengthBucket:
                     CycleLengthBucketStepView(selection: $viewModel.cycleLengthBucket)
-                case .dateOfBirth:
-                    DateOfBirthStepView(date: $viewModel.dateOfBirth)
                 case .knownConditions:
                     KnownConditionsStepView(selection: $viewModel.knownConditions)
                 case .signInWithApple:
                     SignInWithAppleStepView(viewModel: viewModel, onSkip: finish)
                 }
             }
+            .id(step)
+            .transition(
+                .asymmetric(
+                    insertion: .move(edge: navigationDirection == .forward ? .trailing : .leading).combined(with: .opacity),
+                    removal: .move(edge: navigationDirection == .forward ? .leading : .trailing).combined(with: .opacity)
+                )
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if let errorMessage = viewModel.errorMessage, step != .signInWithApple {
@@ -84,7 +96,10 @@ struct OnboardingRootView: View {
 
     private func goBack() {
         guard let previous = OnboardingStep(rawValue: step.rawValue - 1) else { return }
-        step = previous
+        navigationDirection = .backward
+        withAnimation(.easeInOut(duration: 0.25)) {
+            step = previous
+        }
     }
 
     private func goNext() {
@@ -93,7 +108,10 @@ struct OnboardingRootView: View {
             return
         }
         guard let next = OnboardingStep(rawValue: step.rawValue + 1) else { return }
-        step = next
+        navigationDirection = .forward
+        withAnimation(.easeInOut(duration: 0.25)) {
+            step = next
+        }
     }
 
     private func finish() {
