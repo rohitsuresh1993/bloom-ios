@@ -1,6 +1,11 @@
 # macOS
 .DS_Store
 
+# Local-only project docs (kept on disk, not pushed to the repo)
+CLAUDE.md
+ARCHITECTURE.md
+ROADMAP.md
+
 # Xcode
 #
 # gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
