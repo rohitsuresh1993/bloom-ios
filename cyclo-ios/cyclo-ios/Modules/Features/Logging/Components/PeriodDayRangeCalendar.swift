@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Tap-to-toggle multi-day calendar for selecting the days of a period — used by LogPeriodView
 // (both the current/new period and backfilling a past one) and Onboarding's LastPeriodStepView,
@@ -14,6 +15,10 @@ struct PeriodDayRangeCalendar: View {
     // picking a new period, without it being confused for the active selection.
     let loggedDays: Set<Date>
     @State private var displayedMonth: Date
+    // Tracks the in-flight auto-continue sequence (see `toggle`) so a new tap can cancel it
+    // instead of racing it — otherwise a manual toggle mid-sequence and the sequence's own
+    // inserts could stomp on each other.
+    @State private var autoFillTask: Task<Void, Never>?
 
     private let calendar = Calendar.current
     private let maxSelectableDate = Date()
@@ -136,11 +141,47 @@ struct PeriodDayRangeCalendar: View {
     }
 
     private func toggle(_ day: Date) {
+        // Any existing auto-continue sequence must not fight a fresh tap, whether that tap
+        // is a plain toggle or the start of a new sequence of its own.
+        autoFillTask?.cancel()
+        autoFillTask = nil
+
         let normalized = calendar.startOfDay(for: day)
         if selectedDays.contains(normalized) {
             selectedDays.remove(normalized)
-        } else {
-            selectedDays.insert(normalized)
+            return
+        }
+
+        let isFreshSelection = selectedDays.isEmpty
+        selectedDays.insert(normalized)
+        guard isFreshSelection else { return }
+
+        // First day tapped in a fresh selection (not extending/editing an existing range):
+        // auto-continue selecting the next few days so the user doesn't have to tap through
+        // an entire period length one day at a time, with a haptic per day added.
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        autoFillTask = Task { [calendar, maxSelectableDate] in
+            for offset in 1...4 {
+                do {
+                    try await Task.sleep(nanoseconds: 130_000_000)
+                } catch {
+                    return
+                }
+                if Task.isCancelled { return }
+
+                guard let candidate = calendar.date(byAdding: .day, value: offset, to: normalized) else {
+                    return
+                }
+                let normalizedCandidate = calendar.startOfDay(for: candidate)
+                // Don't run the sequence past today.
+                if normalizedCandidate > maxSelectableDate { return }
+
+                await MainActor.run {
+                    guard !Task.isCancelled else { return }
+                    selectedDays.insert(normalizedCandidate)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+            }
         }
     }
 

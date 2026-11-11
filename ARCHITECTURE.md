@@ -100,9 +100,6 @@ cyclo-ios/Modules/
   Auth/                    (NEW)
     AppleSignInProviding.swift (protocol)
     AppleSignInManager.swift   (concrete impl, Keychain-backed identifier storage)
-  Security/                (NEW)
-    AppLockManager.swift (LocalAuthentication wrapper)
-    AppLockGateView.swift (SwiftUI lock screen in front of WindowGroup)
   Features/
     Onboarding/ Home/ Logging/ Insights/ Settings/
 ```
@@ -117,8 +114,10 @@ per-individual — the repository looks up *that user's own* history and hands o
 genuinely population-level numbers are the small set of constants in `PriorTable`, fixed at build time from
 public research, used only until that same person has enough of their own history to dominate the blend.
 HealthKit export is one-directional and repository-triggered; nothing reads from HealthKit back into prediction.
-`AppLockGateView` wraps the `@main` app's root content (replacing the placeholder `pageApp.swift` once the UI
-branch is merged in).
+An earlier in-app PIN/biometric lock (`Modules/Security/`, `AppLockManager` + `AppLockGateView` wrapping the
+`@main` app's root content) was built and then removed — it left the app unable to open at all once a PIN was
+set, and rather than debug it further, Settings now just points the user at iOS 18+'s own per-app Face ID/Touch
+ID/passcode lock (Home Screen icon → "Require Face ID") instead of Cyclo rolling its own.
 
 ## Model fixes (apply now, before UI is built on top of the current shapes)
 

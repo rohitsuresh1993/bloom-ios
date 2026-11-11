@@ -1,7 +1,7 @@
 import SwiftUI
 
 // PLACEHOLDER COPY — this is not a real privacy policy. It exists so the "Privacy Policy" row in
-// Settings has somewhere to go during development. Before shipping, this text needs to be
+// Profile has somewhere to go during development. Before shipping, this text needs to be
 // replaced with an actual policy reviewed by counsel, covering what Cyclo actually collects/
 // stores/exports (SwiftData locally, optional HealthKit export, optional Sign in with Apple —
 // see ARCHITECTURE.md) and in what jurisdictions.
@@ -25,7 +25,7 @@ struct PrivacyPolicyView: View {
                 it's stored (locally on your device via SwiftData), what — if anything — is sent \
                 elsewhere (an optional, user-controlled export of your data to Apple Health, and \
                 an optional Sign in with Apple identifier used only to identify your device), and \
-                how you can delete it (the "Delete All My Data" action in Settings).
+                how you can delete it (the "Delete All My Data" action in Profile).
 
                 Replace this entire placeholder before this app ships to the App Store.
                 """)

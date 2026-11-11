@@ -9,30 +9,44 @@ import SwiftUI
 import SwiftData
 import Foundation
 
+// Pages of the Home carousel — the cycle ring is always first; Mood/Symptoms only join once
+// there's something to show, same "empty => render nothing" rule each card already followed on
+// its own.
+private enum HomeCarouselPage: Hashable {
+    case cycle
+    case mood
+    case symptoms
+}
+
 struct HomePage: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var tabCoordinator: AppTabCoordinator
     @StateObject private var viewModel = HomeViewModel()
-    @State private var showingProfile = false
-    @State private var showingSettings = false
+    @State private var carouselScrollPosition: HomeCarouselPage?
+
+    // Fixed so every page (the ring is the tallest) lays out consistently in the shared
+    // horizontal ScrollView — shorter pages (Mood/Symptoms) are then vertically centered in it
+    // rather than stretching their card to match.
+    private let carouselHeight: CGFloat = 320
+
+    private var carouselPages: [HomeCarouselPage] {
+        var pages: [HomeCarouselPage] = [.cycle]
+        if !viewModel.moodInsights.isEmpty { pages.append(.mood) }
+        if !viewModel.symptomInsights.isEmpty { pages.append(.symptoms) }
+        return pages
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                TopBar(
-                    onProfileTapped: { showingProfile = true },
-                    onSettingsTapped: { showingSettings = true }
-                )
+                TopBar()
 
                 WeekCarouselView(weeks: viewModel.weeks, currentWeekID: viewModel.currentWeekID)
 
-                cycleRingSection
+                insightsCarousel
 
                 if let fertilityCard = viewModel.fertilityCard {
                     FertilityCardView(data: fertilityCard)
-                }
-
-                if !viewModel.patternInsights.isEmpty {
-                    PatternsCardView(insights: viewModel.patternInsights)
                 }
 
                 QuickLogRow(viewModel: viewModel)
@@ -50,27 +64,21 @@ struct HomePage: View {
                 userRepository: UserRepository(modelContext: modelContext)
             )
         }
+        // TabView keeps every tab alive once created, so there's no sheet-dismiss callback to
+        // refresh on anymore when the Profile tab edits something Home's prediction depends on
+        // (age, known conditions) — this re-runs `refresh()` whenever Home becomes the active
+        // tab again instead.
+        .onChange(of: tabCoordinator.selectedTab) { _, newValue in
+            guard newValue == .home else { return }
+            viewModel.refresh()
+        }
         .sheet(item: $viewModel.activeSheet, onDismiss: viewModel.refresh) { kind in
             switch kind {
             case .period:
                 LogPeriodView()
-            case .symptoms:
-                LogSymptomsView()
-            case .mood:
-                LogMoodView()
-            case .flow:
-                LogFlowView()
-            case .activity:
-                LogActivityView()
-            case .more:
-                LogDayView()
+            case .today:
+                TodayLogView(scrollTarget: viewModel.logScrollTarget)
             }
-        }
-        .sheet(isPresented: $showingProfile, onDismiss: viewModel.refresh) {
-            ProfileView()
-        }
-        .sheet(isPresented: $showingSettings, onDismiss: viewModel.refresh) {
-            SettingsView()
         }
         .alert(
             "Something went wrong",
@@ -82,6 +90,60 @@ struct HomePage: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    // Horizontally-paging carousel — reuses the same ScrollView+LazyHStack+paging pattern as
+    // WeekCarouselView above, rather than TabView(.page), for consistency with it. Pages are
+    // heterogeneous (ring vs. insight cards), so `carouselPageView(for:)` switches on
+    // `HomeCarouselPage` instead of ForEach-ing over one view type directly.
+    private var insightsCarousel: some View {
+        VStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(carouselPages, id: \.self) { page in
+                        carouselPageView(for: page)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .containerRelativeFrame(.horizontal)
+                            .id(page)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $carouselScrollPosition)
+            .frame(height: carouselHeight)
+            .onAppear {
+                if carouselScrollPosition == nil {
+                    carouselScrollPosition = carouselPages.first
+                }
+            }
+
+            if carouselPages.count > 1 {
+                HStack(spacing: 6) {
+                    ForEach(carouselPages, id: \.self) { page in
+                        Circle()
+                            .fill(
+                                page == (carouselScrollPosition ?? carouselPages.first)
+                                    ? Color.cycloPrimary
+                                    : Color.cycloPrimary.opacity(0.25)
+                            )
+                            .frame(width: 6, height: 6)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func carouselPageView(for page: HomeCarouselPage) -> some View {
+        switch page {
+        case .cycle:
+            cycleRingSection
+        case .mood:
+            MoodInsightsCardView(insights: viewModel.moodInsights)
+        case .symptoms:
+            SymptomInsightsCardView(insights: viewModel.symptomInsights)
         }
     }
 
@@ -258,6 +320,72 @@ private struct ColdStartRingView: View {
     }
 }
 
+// MARK: - Card chrome (gradient background + icon chip, shared by all three insight cards)
+
+// Placeholder visual tokens — flat tints of the existing cycloPrimary/cycloSecondary brand
+// colors rather than a real design-system gradient/icon set, per the "placeholder tokens for
+// now" direction. Swap `CardGradient`'s color pairs and `CardIconView`'s tints for real tokens
+// once a proper palette exists.
+// Light-mode opacities read fine against a near-white background but nearly disappear against
+// dark mode's near-black background — shared by CardGradient (Fertility's rectangular card) and
+// CircularInsightCardView (the Mood/Symptoms circles) so both boost consistently.
+private func resolvedCardOpacity(_ lightOpacity: Double, colorScheme: ColorScheme) -> Double {
+    colorScheme == .dark ? min(lightOpacity * 2.5, 0.55) : lightOpacity
+}
+
+private struct CardGradient: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    // Each stop is a base color plus the opacity it should render at in light mode.
+    let stops: [(color: Color, lightOpacity: Double)]
+
+    func body(content: Content) -> some View {
+        content
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: stops.map { $0.color.opacity(resolvedCardOpacity($0.lightOpacity, colorScheme: colorScheme)) },
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private extension View {
+    func cardGradient(_ stops: [(Color, Double)]) -> some View {
+        modifier(CardGradient(stops: stops.map { (color: $0.0, lightOpacity: $0.1) }))
+    }
+}
+
+private struct CardIconView: View {
+    enum Glyph {
+        case systemImage(String)
+        case emoji(String)
+    }
+
+    let glyph: Glyph
+    let tint: Color
+    let background: Color
+
+    var body: some View {
+        ZStack {
+            Circle().fill(background)
+            switch glyph {
+            case .systemImage(let name):
+                Image(systemName: name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(tint)
+            case .emoji(let value):
+                Text(value)
+                    .font(.system(size: 15))
+            }
+        }
+        .frame(width: 30, height: 30)
+    }
+}
+
 // MARK: - Fertility card
 
 private struct FertilityCardView: View {
@@ -265,8 +393,11 @@ private struct FertilityCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Fertility")
-                .font(.headline)
+            HStack(spacing: 8) {
+                CardIconView(glyph: .systemImage("drop.fill"), tint: .cycloPrimary, background: Color.cycloPrimary.opacity(0.18))
+                Text("Fertility")
+                    .font(.headline)
+            }
             Text(data.statusSentence)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Color.cycloPrimary)
@@ -284,91 +415,164 @@ private struct FertilityCardView: View {
                 }
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cycloSecondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .cardGradient([(Color.cycloPrimary, 0.14), (Color.cycloSecondary, 0.10)])
     }
 }
 
-// MARK: - Patterns card
+// MARK: - Mood / Symptoms insight circles
 
-private struct PatternsCardView: View {
+// Matches the cycle ring's circular shape and 220pt diameter for visual consistency within the
+// carousel — both cards share this layout, only the title/icon/colors and the insights feeding
+// them differ. Tapping still cycles one insight at a time, same mechanic as the old rectangular
+// stacked-card version, just via a crossfade in place of peeking card edges: a stack of
+// rectangular cards peeking out doesn't read well clipped to a circle.
+private struct CircularInsightCardView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let title: String
+    let icon: CardIconView.Glyph
+    let iconTint: Color
+    let iconBackground: Color
+    let gradientStops: [(Color, Double)]
+    let accentColor: Color
+    let insights: [HomeViewModel.PatternInsight]
+
+    @State private var frontIndex = 0
+
+    private let diameter: CGFloat = 220
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: gradientStops.map {
+                                $0.0.opacity(resolvedCardOpacity($0.1, colorScheme: colorScheme))
+                            },
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                VStack(spacing: 10) {
+                    HStack(spacing: 6) {
+                        CardIconView(glyph: icon, tint: iconTint, background: iconBackground)
+                        Text(title)
+                            .font(.headline)
+                    }
+
+                    Text(currentInsightText)
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(5)
+                        .id(frontIndex)
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                        .padding(.horizontal, 28)
+                }
+            }
+            .frame(width: diameter, height: diameter)
+            .contentShape(Circle())
+            .onTapGesture {
+                guard insights.count > 1 else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    frontIndex = (frontIndex + 1) % insights.count
+                }
+            }
+
+            if insights.count > 1 {
+                HStack(spacing: 4) {
+                    ForEach(insights.indices, id: \.self) { index in
+                        Circle()
+                            .fill(index == frontIndex ? accentColor : accentColor.opacity(0.25))
+                            .frame(width: 5, height: 5)
+                    }
+                }
+            }
+        }
+    }
+
+    private var currentInsightText: String {
+        guard insights.indices.contains(frontIndex) else { return "" }
+        return insights[frontIndex].text
+    }
+}
+
+private struct MoodInsightsCardView: View {
+    let insights: [HomeViewModel.PatternInsight]
+
+    // Placeholder darker-lavender icon tint — cycloSecondary itself is too pale to read as an
+    // icon glyph; there's no separate design token for this yet, so this is a one-off literal
+    // until a real icon-tint token exists.
+    private static let iconTint = Color(red: 0.353, green: 0.388, blue: 0.769)
+
+    var body: some View {
+        CircularInsightCardView(
+            title: "Mood",
+            icon: .systemImage("face.smiling"),
+            iconTint: Self.iconTint,
+            iconBackground: Color.cycloSecondary.opacity(0.3),
+            gradientStops: [(Color.cycloSecondary, 0.3), (Color.cycloSecondary, 0.1)],
+            accentColor: Self.iconTint,
+            insights: insights
+        )
+    }
+}
+
+private struct SymptomInsightsCardView: View {
     let insights: [HomeViewModel.PatternInsight]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("What you might notice today")
-                .font(.headline)
-            ForEach(insights) { insight in
-                Text(insight.text)
-                    .font(.subheadline)
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cycloPrimary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        CircularInsightCardView(
+            title: "Symptoms",
+            icon: .emoji("💢"),
+            iconTint: .cycloPrimary,
+            iconBackground: Color.cycloPrimary.opacity(0.16),
+            gradientStops: [(Color.cycloPrimary, 0.26), (Color.cycloPrimary, 0.08)],
+            accentColor: .cycloPrimary,
+            insights: insights
+        )
     }
 }
 
 // MARK: - Quick-log row
 
+// Just three entry points onto Home now: Period (its own calendar screen), a generic "+" that
+// opens the unified TodayLogView at the top (everything else — Mood/Symptoms/Activity/etc. live
+// there now, not as their own buttons), and Flow, kept as its own button since it's checked daily
+// most often. Centered rather than a scrolling row, since three buttons fit without scrolling.
 private struct QuickLogRow: View {
     @ObservedObject var viewModel: HomeViewModel
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 20) {
-                QuickLogButton(
-                    systemImage: "drop.fill",
-                    label: "Period",
-                    isLogged: viewModel.periodLoggedToday,
-                    tint: .cycloPrimary,
-                    action: viewModel.tapPeriod
-                )
-                QuickLogButton(
-                    systemImage: "note.text",
-                    label: "Symptoms",
-                    isLogged: viewModel.symptomsLoggedToday,
-                    tint: .cycloSecondary,
-                    action: viewModel.presentSymptomsSheet
-                )
-                QuickLogButton(
-                    systemImage: "face.smiling",
-                    label: "Mood",
-                    isLogged: viewModel.moodLoggedToday,
-                    tint: .cycloSecondary,
-                    action: viewModel.presentMoodSheet
-                )
-                QuickLogButton(
-                    systemImage: "chart.bar.fill",
-                    label: "Flow",
-                    isLogged: viewModel.flowLoggedToday,
-                    tint: .cycloSecondary,
-                    action: viewModel.presentFlowSheet
-                )
-                QuickLogButton(
-                    systemImage: "figure.walk",
-                    label: "Activity",
-                    isLogged: viewModel.activityLoggedToday,
-                    tint: .cycloSecondary,
-                    action: viewModel.presentActivitySheet
-                )
-                QuickLogButton(
-                    systemImage: "ellipsis.circle",
-                    label: "More",
-                    isLogged: viewModel.moreLoggedToday,
-                    tint: .cycloSecondary,
-                    action: viewModel.presentMoreSheet
-                )
-            }
-            .padding(.horizontal, 4)
-            // The "logged today" badge sits in the top-trailing corner of each 56pt circle,
-            // offset further outward — without this top padding, the ScrollView clips its own
-            // content to the row's natural (badge-less) height and cuts the badge off.
-            .padding(.top, 6)
+        HStack(spacing: 32) {
+            QuickLogButton(
+                systemImage: "drop.fill",
+                label: "Period",
+                isLogged: viewModel.periodLoggedToday,
+                tint: .cycloPrimary,
+                action: viewModel.tapPeriod
+            )
+            QuickLogButton(
+                systemImage: "plus",
+                label: "Log",
+                isLogged: viewModel.moreLoggedToday,
+                tint: .cycloSecondary,
+                action: viewModel.presentMoreSheet
+            )
+            QuickLogButton(
+                systemImage: "chart.bar.fill",
+                label: "Flow",
+                isLogged: viewModel.flowLoggedToday,
+                tint: .cycloSecondary,
+                action: viewModel.presentFlowSheet
+            )
         }
+        .frame(maxWidth: .infinity)
+        // The "logged today" badge sits in the top-trailing corner of each 56pt circle, offset
+        // further outward — without this top padding it gets clipped by the row's natural
+        // (badge-less) height.
+        .padding(.top, 6)
     }
 }
 
@@ -430,4 +634,6 @@ private struct TodaysChipsStrip: View {
 
 #Preview {
     HomePage()
+        .environmentObject(AppTabCoordinator())
+        .modelContainer(PersistenceController.makeContainer(inMemory: true))
 }

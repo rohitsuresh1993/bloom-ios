@@ -3,8 +3,8 @@
 //  cyclo-ios
 //
 //  A simple wrapping flow layout used by the chip-based category pickers in the Logging
-//  feature (see SelectableChip, ChipSelectionSections). Lays subviews left-to-right, wrapping
-//  to a new row whenever the next one would overflow the available width.
+//  feature (see IconOptionChip, LogCategoryCard). Lays subviews left-to-right, wrapping to a
+//  new row whenever the next one would overflow the available width.
 //
 
 import SwiftUI

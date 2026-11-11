@@ -8,6 +8,11 @@
 //  synthesis, which requires the conformance to be declared alongside the enum) so this stays
 //  a pure addition from the Logging feature's own files.
 //
+//  `iconSystemName` below is a placeholder SF Symbol per case — a reasonable decorative choice,
+//  not a carefully-curated icon set, picked to be broadly available (SF Symbols shipped by
+//  iOS 16/17 at the latest) given there's no way to visually verify every glyph in this
+//  environment. Swap for real icon tokens if/when the app gets a proper icon set.
+//
 
 import Foundation
 
@@ -37,6 +42,26 @@ extension Mood: LogCategoryOption {
         case .verySelfCritical: return "Very self-critical"
         }
     }
+
+    var iconSystemName: String? {
+        switch self {
+        case .calm: return "leaf.fill"
+        case .happy: return "face.smiling"
+        case .energetic: return "bolt.fill"
+        case .frisky: return "flame.fill"
+        case .moodSwings: return "arrow.left.arrow.right"
+        case .irritated: return "exclamationmark.triangle.fill"
+        case .sad: return "cloud.rain.fill"
+        case .anxious: return "waveform.path.ecg"
+        case .depressed: return "cloud.fill"
+        case .feelingGuilty: return "hand.raised.fill"
+        case .obsessiveThoughts: return "arrow.triangle.2.circlepath"
+        case .lowEnergy: return "battery.25"
+        case .apathetic: return "minus.circle.fill"
+        case .confused: return "questionmark.circle.fill"
+        case .verySelfCritical: return "exclamationmark.bubble.fill"
+        }
+    }
 }
 
 extension Symptoms: LogCategoryOption {
@@ -61,6 +86,23 @@ extension Symptoms: LogCategoryOption {
         case .vaginalDryness: return "Vaginal dryness"
         }
     }
+
+    var iconSystemName: String? {
+        switch self {
+        case .everythingIsFine: return "hand.thumbsup.fill"
+        case .cramps: return "bolt.heart.fill"
+        case .tenderBreasts: return "heart.fill"
+        case .headache: return "brain.head.profile"
+        case .acne: return "circle.grid.2x2.fill"
+        case .backache: return "figure.walk"
+        case .fatigue: return "zzz"
+        case .cravings: return "fork.knife"
+        case .insomnia: return "moon.zzz.fill"
+        case .abdominalPain: return "bolt.fill"
+        case .vaginalItching: return "allergens"
+        case .vaginalDryness: return "drop"
+        }
+    }
 }
 
 extension SexualActivity: LogCategoryOption {
@@ -82,6 +124,20 @@ extension SexualActivity: LogCategoryOption {
         case .orgasm: return "Orgasm"
         }
     }
+
+    var iconSystemName: String? {
+        switch self {
+        case .didntHaveSex: return "xmark.circle.fill"
+        case .protectedSex: return "shield.fill"
+        case .unprotectedSex: return "shield.slash.fill"
+        case .oralSex: return "heart.circle.fill"
+        case .analSex: return "circle.fill"
+        case .masturbation: return "hand.raised.fill"
+        case .sensualTouch: return "hands.sparkles.fill"
+        case .sexToys: return "sparkles"
+        case .orgasm: return "star.fill"
+        }
+    }
 }
 
 extension SexDrive: LogCategoryOption {
@@ -92,6 +148,14 @@ extension SexDrive: LogCategoryOption {
         case .highSexDrive: return "High"
         case .neutralSexDrive: return "Neutral"
         case .lowSexDrive: return "Low"
+        }
+    }
+
+    var iconSystemName: String? {
+        switch self {
+        case .highSexDrive: return "heart.fill"
+        case .neutralSexDrive: return "heart"
+        case .lowSexDrive: return "heart.slash"
         }
     }
 }
@@ -115,6 +179,20 @@ extension VaginalDischarge: LogCategoryOption {
         case .gray: return "Gray"
         }
     }
+
+    var iconSystemName: String? {
+        switch self {
+        case .noDischarge: return "circle.slash"
+        case .creamy: return "drop.fill"
+        case .watery: return "drop"
+        case .sticky: return "water.waves"
+        case .eggWhite: return "oval.fill"
+        case .spotting: return "circle.grid.2x2.fill"
+        case .unusual: return "exclamationmark.triangle.fill"
+        case .clumpyWhite: return "cloud.fill"
+        case .gray: return "circle.fill"
+        }
+    }
 }
 
 extension OvulationTestResult: LogCategoryOption {
@@ -126,6 +204,15 @@ extension OvulationTestResult: LogCategoryOption {
         case .lowFertility: return "Low fertility"
         case .highFertility: return "High fertility"
         case .peak: return "Peak"
+        }
+    }
+
+    var iconSystemName: String? {
+        switch self {
+        case .negative: return "minus.circle.fill"
+        case .lowFertility: return "chart.bar.fill"
+        case .highFertility: return "chart.bar.xaxis"
+        case .peak: return "flame.fill"
         }
     }
 }
@@ -141,6 +228,15 @@ extension PregnancyTest: LogCategoryOption {
         case .faintLine: return "Faint line"
         }
     }
+
+    var iconSystemName: String? {
+        switch self {
+        case .didntTakeTests: return "circle.slash"
+        case .positive: return "plus.circle.fill"
+        case .negative: return "minus.circle.fill"
+        case .faintLine: return "line.diagonal"
+        }
+    }
 }
 
 extension OralContraceptiveStatus: LogCategoryOption {
@@ -151,6 +247,14 @@ extension OralContraceptiveStatus: LogCategoryOption {
         case .takenOnTime: return "Taken on time"
         case .yesterdaysPill: return "Yesterday's pill"
         case .missedPill: return "Missed pill"
+        }
+    }
+
+    var iconSystemName: String? {
+        switch self {
+        case .takenOnTime: return "checkmark.circle.fill"
+        case .yesterdaysPill: return "clock.arrow.circlepath"
+        case .missedPill: return "xmark.circle.fill"
         }
     }
 }
@@ -174,6 +278,20 @@ extension PhysicalActivity: LogCategoryOption {
         case .walking: return "Walking"
         }
     }
+
+    var iconSystemName: String? {
+        switch self {
+        case .didntExercise: return "figure.stand"
+        case .yoga: return "figure.yoga"
+        case .gym: return "dumbbell.fill"
+        case .aerobicsAndDancing: return "music.note"
+        case .swimming: return "figure.pool.swim"
+        case .teamSports: return "sportscourt.fill"
+        case .running: return "figure.run"
+        case .cycling: return "bicycle"
+        case .walking: return "figure.walk"
+        }
+    }
 }
 
 extension DigestionAndStool: LogCategoryOption {
@@ -188,6 +306,16 @@ extension DigestionAndStool: LogCategoryOption {
         case .diarrhea: return "Diarrhea"
         }
     }
+
+    var iconSystemName: String? {
+        switch self {
+        case .normal: return "checkmark.circle.fill"
+        case .nausea: return "exclamationmark.circle.fill"
+        case .bloating: return "circle.inset.filled"
+        case .constipation: return "lock.fill"
+        case .diarrhea: return "drop.fill"
+        }
+    }
 }
 
 extension FlowIntensity: LogCategoryOption {
@@ -199,6 +327,15 @@ extension FlowIntensity: LogCategoryOption {
         case .light: return "Light"
         case .medium: return "Medium"
         case .heavy: return "Heavy"
+        }
+    }
+
+    var iconSystemName: String? {
+        switch self {
+        case .spotting: return "drop"
+        case .light: return "drop.fill"
+        case .medium: return "drop.fill"
+        case .heavy: return "drop.fill"
         }
     }
 }
@@ -219,6 +356,19 @@ extension Other: LogCategoryOption {
         case .breathingExercises: return "Breathing exercises"
         case .diseaseOrInjury: return "Disease or injury"
         case .alcohol: return "Alcohol"
+        }
+    }
+
+    var iconSystemName: String? {
+        switch self {
+        case .travel: return "airplane"
+        case .stress: return "bolt.fill"
+        case .meditation: return "figure.mind.and.body"
+        case .journaling: return "book.fill"
+        case .kegelExercises: return "figure.strengthtraining.traditional"
+        case .breathingExercises: return "lungs.fill"
+        case .diseaseOrInjury: return "bandage.fill"
+        case .alcohol: return "wineglass.fill"
         }
     }
 }

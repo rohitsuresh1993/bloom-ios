@@ -1,7 +1,24 @@
 import HealthKit
 
+// All actual HealthKit writes funnel through this one actor-isolated queue, regardless of how
+// many HealthKitExporter instances exist — most call sites construct one ad hoc per call, and
+// LogRepository.exportToHealthKit fires off several independent fire-and-forget Tasks per
+// `saveLog` call (one per populated category). Two of those writes racing each other — e.g.
+// logging two different flow-intensity values in quick succession — was confirmed (via an
+// on-device crash report) to crash deep inside HealthKit's own object-validation code
+// (NSException in `-[HKObject _validateForCreation]`), not in Cyclo's own logic. Actor isolation
+// guarantees only one write is ever in flight at a time, app-wide, which eliminates that race.
+private actor HealthKitWriteQueue {
+    static let shared = HealthKitWriteQueue()
+    private init() {}
+
+    func save(_ sample: HKSample, to healthStore: HKHealthStore) async throws {
+        try await healthStore.save(sample)
+    }
+}
+
 final class HealthKitExporter: HealthStoreWriting {
-    // Referenced by SettingsView's `@AppStorage` toggle rather than duplicating the string there.
+    // Referenced by ProfilePage's `@AppStorage` toggle rather than duplicating the string there.
     static let exportEnabledDefaultsKey = "cyclo.healthKitExportEnabled"
 
     private let healthStore: HKHealthStore
@@ -34,14 +51,21 @@ final class HealthKitExporter: HealthStoreWriting {
 
     func exportMenstrualFlow(_ intensity: FlowIntensity?, on date: Date, isCycleStart: Bool) async throws {
         guard isExportEnabled else { return }
+        // HKMetadataKeyMenstrualCycleStart is a *required* metadata key for every menstrualFlow
+        // category sample per Apple's own header doc (HKMetadata.h) — not just on the first day
+        // of a period. Omitting it when `isCycleStart` is false (as this used to) makes
+        // HKCategorySample's init raise an uncaught NSException (confirmed via an on-device
+        // crash report: `-[HKObject _validateForCreation]`), which `try?` can't catch since it's
+        // a raw Objective-C exception, not a Swift `Error`. Always including the key, with its
+        // real true/false value, satisfies the requirement either way.
         let sample = HKCategorySample(
             type: HKCategoryType(.menstrualFlow),
             value: Self.menstrualFlowValue(for: intensity).rawValue,
             start: date,
             end: date,
-            metadata: isCycleStart ? [HKMetadataKeyMenstrualCycleStart: true] : nil
+            metadata: [HKMetadataKeyMenstrualCycleStart: isCycleStart]
         )
-        try await healthStore.save(sample)
+        try await HealthKitWriteQueue.shared.save(sample, to: healthStore)
     }
 
     func exportIntermenstrualBleeding(on date: Date) async throws {
@@ -52,7 +76,7 @@ final class HealthKitExporter: HealthStoreWriting {
             start: date,
             end: date
         )
-        try await healthStore.save(sample)
+        try await HealthKitWriteQueue.shared.save(sample, to: healthStore)
     }
 
     func exportOvulationTestResult(_ result: OvulationTestResult, on date: Date) async throws {
@@ -63,7 +87,7 @@ final class HealthKitExporter: HealthStoreWriting {
             start: date,
             end: date
         )
-        try await healthStore.save(sample)
+        try await HealthKitWriteQueue.shared.save(sample, to: healthStore)
     }
 
     func exportSexualActivity(_ activities: [SexualActivity], on date: Date) async throws {
@@ -84,7 +108,7 @@ final class HealthKitExporter: HealthStoreWriting {
             end: date,
             metadata: metadata.isEmpty ? nil : metadata
         )
-        try await healthStore.save(sample)
+        try await HealthKitWriteQueue.shared.save(sample, to: healthStore)
     }
 
     func exportContraceptiveUse(_ status: OralContraceptiveStatus, on date: Date) async throws {
@@ -98,7 +122,7 @@ final class HealthKitExporter: HealthStoreWriting {
             start: date,
             end: date
         )
-        try await healthStore.save(sample)
+        try await HealthKitWriteQueue.shared.save(sample, to: healthStore)
     }
 
     private static func menstrualFlowValue(for intensity: FlowIntensity?) -> HKCategoryValueVaginalBleeding {

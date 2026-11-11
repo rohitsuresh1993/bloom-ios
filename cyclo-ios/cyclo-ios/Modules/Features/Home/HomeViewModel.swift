@@ -4,8 +4,7 @@
 //
 //  Owns Home's data-fetching/computation: builds on the repositories HomePage hands it (from
 //  `@Environment(\.modelContext)`), runs the Prediction engines, and exposes plain view-ready
-//  `@Published` state. Mirrors the small-focused-view-model pattern established by
-//  `AppLockGateViewModel` (Modules/Security/AppLockGateView.swift).
+//  `@Published` state.
 //
 
 import Foundation
@@ -43,22 +42,27 @@ final class HomeViewModel: ObservableObject {
         let isConfirmedByTest: Bool
     }
 
+    // Whether a given insight is drawn from this user's own logged history or, below the data
+    // threshold, from PopulationInsights' cold-start generalizations — the card reads this to
+    // caption itself honestly rather than presenting population stats as personal.
+    enum InsightSource {
+        case personal
+        case population
+    }
+
     struct PatternInsight: Identifiable {
         let id = UUID()
         let text: String
+        let source: InsightSource
     }
 
     // Which full-screen Logging sheet (built by the Logging feature) is presented over Home.
-    // One case per category screen (Symptoms/Mood/Flow/Activity each get their own — see
-    // CategoryLogViews.swift) rather than one combined "day" sheet; `.more` covers the
-    // remaining Log categories that don't have a dedicated quick-log button yet.
+    // `.period` keeps its own calendar-based screen (LogPeriodView); every other category lives
+    // on the single unified TodayLogView now (see LogCategoryKind) — `logScrollTarget` says
+    // which of its cards to scroll to when opened from one of Home's quick-log buttons.
     enum ActiveSheet: Identifiable {
         case period
-        case symptoms
-        case mood
-        case flow
-        case activity
-        case more
+        case today
 
         var id: Self { self }
     }
@@ -83,18 +87,20 @@ final class HomeViewModel: ObservableObject {
     // Fertility card (nil => render nothing)
     @Published private(set) var fertilityCard: FertilityCardData?
 
-    // Patterns card (empty => render nothing)
-    @Published private(set) var patternInsights: [PatternInsight] = []
+    // Mood/Symptoms insight cards (empty => render nothing). Kept as two separate published
+    // arrays, not one combined list, so Home can render them as two distinct cards.
+    @Published private(set) var moodInsights: [PatternInsight] = []
+    @Published private(set) var symptomInsights: [PatternInsight] = []
 
     // Quick-log row + today's chip strip
     @Published private(set) var todaysChips: [String] = []
     @Published private(set) var periodLoggedToday: Bool = false
-    @Published private(set) var symptomsLoggedToday: Bool = false
-    @Published private(set) var moodLoggedToday: Bool = false
     @Published private(set) var flowLoggedToday: Bool = false
-    @Published private(set) var activityLoggedToday: Bool = false
+    // Drives the "+" quick-log button's logged-today dot — true if anything other than Period
+    // or Flow (which have their own buttons) has a value today.
     @Published private(set) var moreLoggedToday: Bool = false
     @Published var activeSheet: ActiveSheet?
+    @Published private(set) var logScrollTarget: LogCategoryKind?
     @Published var errorMessage: String?
 
     // MARK: - Dependencies (handed in by HomePage via `configure`, since HomePage must stay
@@ -147,17 +153,15 @@ final class HomeViewModel: ObservableObject {
             currentWeekID = builtWeeks.todayWeekID
 
             let todaysLogValue = try logRepository.log(on: today)
-            symptomsLoggedToday = !(todaysLogValue?.symptoms?.isEmpty ?? true)
-            moodLoggedToday = !(todaysLogValue?.mood?.isEmpty ?? true)
             flowLoggedToday = todaysLogValue?.flowIntensity != nil
-            activityLoggedToday = !(todaysLogValue?.physicalActivity?.isEmpty ?? true)
             moreLoggedToday = Self.hasMoreCategoriesLogged(todaysLogValue)
             todaysChips = Self.chips(for: todaysLogValue)
 
             guard hasCycleData else {
                 fertileArcRange = nil
                 fertilityCard = nil
-                patternInsights = []
+                moodInsights = []
+                symptomInsights = []
                 return
             }
 
@@ -230,6 +234,31 @@ final class HomeViewModel: ObservableObject {
             )
             ringCenterSubtitle = isOnContraception ? "DAY OF CYCLE" : currentPhase.displayName.uppercased()
 
+            // Within a week of the predicted next period (today through 7 days out), a countdown
+            // is more useful than "Day N / phase" — and meaningful even on hormonal contraception,
+            // since a predicted withdrawal bleed date is still a real date. Takes priority over
+            // both the normal phase subtitle and the contraception-only "DAY OF CYCLE" one above.
+            // Outside this window (including an overdue/negative days-until with no new period
+            // logged yet) the normal "Day N" display from above is left untouched.
+            let daysUntilPeriod = calendar.dateComponents(
+                [.day],
+                from: calendar.startOfDay(for: today),
+                to: calendar.startOfDay(for: prediction.predictedStartDate)
+            ).day ?? Int.max
+            switch daysUntilPeriod {
+            case 0:
+                ringCenterTitle = "Today"
+                ringCenterSubtitle = "PERIOD DUE"
+            case 1:
+                ringCenterTitle = "1"
+                ringCenterSubtitle = "DAY UNTIL PERIOD"
+            case 2...7:
+                ringCenterTitle = "\(daysUntilPeriod)"
+                ringCenterSubtitle = "DAYS UNTIL PERIOD"
+            default:
+                break
+            }
+
             // n>=3 observed cycles gate — showing a fertile window or named phase confidence any
             // earlier overstates how much the engine actually knows yet.
             let showFertileDetail = fertilityWindow != nil && prediction.confidence != .stillLearning
@@ -259,19 +288,31 @@ final class HomeViewModel: ObservableObject {
                 fertilityCard = nil
             }
 
-            if prediction.confidence != .stillLearning {
-                let logsThisHistory = try logRepository.logs(from: sortedStarts.first ?? today, to: today)
-                patternInsights = Self.buildPatternInsights(
-                    logs: logsThisHistory,
-                    periodStartDates: sortedStarts,
-                    typicalCycleLength: prediction.predictedCycleLength,
-                    typicalLutealPhaseLength: lutealLengthForBucketing,
-                    currentPhase: currentPhase,
-                    calendar: calendar
-                )
-            } else {
-                patternInsights = []
-            }
+            // Below 3 observed cycles (same ConfidenceLevel.stillLearning threshold used for the
+            // fertile-window gate above), this user's own per-phase frequencies are too thin to
+            // trust — fall back to PopulationInsights' cold-start generalizations instead of
+            // showing nothing. Re-checked per category below too, since even with >=3 cycles a
+            // *specific* phase/symptom combination can still fail to clear the 50% ratio floor.
+            let logsThisHistory = try logRepository.logs(from: sortedStarts.first ?? today, to: today)
+            let hasEnoughPersonalData = prediction.confidence != .stillLearning
+            symptomInsights = Self.buildSymptomInsights(
+                logs: logsThisHistory,
+                periodStartDates: sortedStarts,
+                typicalCycleLength: prediction.predictedCycleLength,
+                typicalLutealPhaseLength: lutealLengthForBucketing,
+                currentPhase: currentPhase,
+                hasEnoughPersonalData: hasEnoughPersonalData,
+                calendar: calendar
+            )
+            moodInsights = Self.buildMoodInsights(
+                logs: logsThisHistory,
+                periodStartDates: sortedStarts,
+                typicalCycleLength: prediction.predictedCycleLength,
+                typicalLutealPhaseLength: lutealLengthForBucketing,
+                currentPhase: currentPhase,
+                hasEnoughPersonalData: hasEnoughPersonalData,
+                calendar: calendar
+            )
         } catch {
             errorMessage = "Couldn't load your cycle data."
         }
@@ -282,22 +323,20 @@ final class HomeViewModel: ObservableObject {
     // Opens the real Logging feature's screens (Modules/Features/Logging) as sheets, rather than
     // mutating repositories directly here — that interim fast path is gone now that Logging
     // exists. HomePage calls `refresh()` on dismiss so the ring/fertility/chip state picks up
-    // whatever was just logged. Each category opens its own screen (CategoryLogViews.swift)
-    // instead of one shared combined form.
+    // whatever was just logged. Every category but Period shares TodayLogView now; each button
+    // just sets which of its cards to land on.
     func tapPeriod() { activeSheet = .period }
-    func presentSymptomsSheet() { activeSheet = .symptoms }
-    func presentMoodSheet() { activeSheet = .mood }
-    func presentFlowSheet() { activeSheet = .flow }
-    func presentActivitySheet() { activeSheet = .activity }
-    func presentMoreSheet() { activeSheet = .more }
+    func presentFlowSheet() { logScrollTarget = .flowIntensity; activeSheet = .today }
+    func presentMoreSheet() { logScrollTarget = nil; activeSheet = .today }
 
     // MARK: - Private helpers
 
-    // Drives the "More" quick-log button's logged-today dot — true if any of the categories
-    // without their own dedicated screen (see CategoryLogViews.swift) has a value today.
     private static func hasMoreCategoriesLogged(_ log: Log?) -> Bool {
         guard let log else { return false }
-        return !(log.sexualActivity?.isEmpty ?? true)
+        return !(log.mood?.isEmpty ?? true)
+            || !(log.symptoms?.isEmpty ?? true)
+            || !(log.physicalActivity?.isEmpty ?? true)
+            || !(log.sexualActivity?.isEmpty ?? true)
             || log.sexDrive != nil
             || log.vaginalDischarge != nil
             || log.ovulationTestResult != nil
@@ -386,82 +425,129 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    private static func buildPatternInsights(
+    private struct PersonalCandidate {
+        let phrase: String
+        let occurrences: Int
+        let cyclesObserved: Int
+        let ratio: Double
+    }
+
+    private static func buildSymptomInsights(
         logs: [Log],
         periodStartDates: [Date],
         typicalCycleLength: Double,
         typicalLutealPhaseLength: Double,
         currentPhase: CyclePhase,
+        hasEnoughPersonalData: Bool,
         calendar: Calendar
     ) -> [PatternInsight] {
-        let symptomObservations: [SymptomCorrelationEngine.SymptomObservation] = logs.compactMap { log in
-            guard let symptoms = log.symptoms else { return nil }
-            let filtered = symptoms.filter { $0 != .everythingIsFine }
-            guard !filtered.isEmpty else { return nil }
-            return SymptomCorrelationEngine.SymptomObservation(date: log.timestamp, symptoms: filtered)
-        }
-        let moodObservations: [SymptomCorrelationEngine.MoodObservation] = logs.compactMap { log in
-            guard let moods = log.mood, !moods.isEmpty else { return nil }
-            return SymptomCorrelationEngine.MoodObservation(date: log.timestamp, moods: moods)
-        }
-
-        let symptomFrequencies = SymptomCorrelationEngine.phaseFrequencies(
-            observations: symptomObservations,
-            periodStartDates: periodStartDates,
-            typicalCycleLength: typicalCycleLength,
-            typicalLutealPhaseLength: typicalLutealPhaseLength,
-            calendar: calendar
-        )
-        let moodFrequencies = SymptomCorrelationEngine.moodPhaseFrequencies(
-            observations: moodObservations,
-            periodStartDates: periodStartDates,
-            typicalCycleLength: typicalCycleLength,
-            typicalLutealPhaseLength: typicalLutealPhaseLength,
-            calendar: calendar
-        )
-
-        struct Candidate {
-            let phrase: String
-            let occurrences: Int
-            let cyclesObserved: Int
-            let ratio: Double
-        }
-
-        var candidates: [Candidate] = []
-
-        // 50%-occurrence-over-observed-cycles floor — below this, the pattern is too thin to
-        // surface as "this is what you might notice," per ARCHITECTURE.md's retrospective-only
-        // framing for this engine.
-        for frequency in symptomFrequencies where frequency.phase == currentPhase && frequency.cyclesObserved > 0 {
-            let ratio = Double(frequency.occurrences) / Double(frequency.cyclesObserved)
-            guard ratio >= 0.5 else { continue }
-            candidates.append(Candidate(
-                phrase: phrase(forSymptom: frequency.symptom),
-                occurrences: frequency.occurrences,
-                cyclesObserved: frequency.cyclesObserved,
-                ratio: ratio
-            ))
-        }
-
-        for frequency in moodFrequencies where frequency.phase == currentPhase && frequency.cyclesObserved > 0 {
-            let ratio = Double(frequency.occurrences) / Double(frequency.cyclesObserved)
-            guard ratio >= 0.5 else { continue }
-            candidates.append(Candidate(
-                phrase: phrase(forMood: frequency.mood),
-                occurrences: frequency.occurrences,
-                cyclesObserved: frequency.cyclesObserved,
-                ratio: ratio
-            ))
-        }
-
-        return candidates
-            .sorted { $0.ratio > $1.ratio }
-            .prefix(3)
-            .map { candidate in
-                PatternInsight(
-                    text: "You might \(candidate.phrase) today — shown up in \(candidate.occurrences) of your last \(candidate.cyclesObserved) cycles."
-                )
+        if hasEnoughPersonalData {
+            let observations: [SymptomCorrelationEngine.SymptomObservation] = logs.compactMap { log in
+                guard let symptoms = log.symptoms else { return nil }
+                let filtered = symptoms.filter { $0 != .everythingIsFine }
+                guard !filtered.isEmpty else { return nil }
+                return SymptomCorrelationEngine.SymptomObservation(date: log.timestamp, symptoms: filtered)
             }
+            let frequencies = SymptomCorrelationEngine.phaseFrequencies(
+                observations: observations,
+                periodStartDates: periodStartDates,
+                typicalCycleLength: typicalCycleLength,
+                typicalLutealPhaseLength: typicalLutealPhaseLength,
+                calendar: calendar
+            )
+
+            // 50%-occurrence-over-observed-cycles floor — below this, the pattern is too thin to
+            // surface as "this is what you might notice," per ARCHITECTURE.md's retrospective-
+            // only framing for this engine.
+            let personal = frequencies
+                .filter { $0.phase == currentPhase && $0.cyclesObserved > 0 }
+                .compactMap { frequency -> PersonalCandidate? in
+                    let ratio = Double(frequency.occurrences) / Double(frequency.cyclesObserved)
+                    guard ratio >= 0.5 else { return nil }
+                    return PersonalCandidate(
+                        phrase: phrase(forSymptom: frequency.symptom),
+                        occurrences: frequency.occurrences,
+                        cyclesObserved: frequency.cyclesObserved,
+                        ratio: ratio
+                    )
+                }
+                .sorted { $0.ratio > $1.ratio }
+
+            if !personal.isEmpty {
+                return personal.prefix(3).map { candidate in
+                    PatternInsight(
+                        text: "You might \(candidate.phrase) today — shown up in "
+                            + "\(candidate.occurrences) of your last \(candidate.cyclesObserved) cycles.",
+                        source: .personal
+                    )
+                }
+            }
+        }
+
+        // Cold start, or this phase just hasn't produced a confident personal pattern yet.
+        return PopulationInsights.topSymptoms(forPhase: currentPhase).prefix(3).map { symptom in
+            PatternInsight(
+                text: "Many people \(phrase(forSymptom: symptom)) during the "
+                    + "\(currentPhase.displayName.lowercased()) phase.",
+                source: .population
+            )
+        }
+    }
+
+    private static func buildMoodInsights(
+        logs: [Log],
+        periodStartDates: [Date],
+        typicalCycleLength: Double,
+        typicalLutealPhaseLength: Double,
+        currentPhase: CyclePhase,
+        hasEnoughPersonalData: Bool,
+        calendar: Calendar
+    ) -> [PatternInsight] {
+        if hasEnoughPersonalData {
+            let observations: [SymptomCorrelationEngine.MoodObservation] = logs.compactMap { log in
+                guard let moods = log.mood, !moods.isEmpty else { return nil }
+                return SymptomCorrelationEngine.MoodObservation(date: log.timestamp, moods: moods)
+            }
+            let frequencies = SymptomCorrelationEngine.moodPhaseFrequencies(
+                observations: observations,
+                periodStartDates: periodStartDates,
+                typicalCycleLength: typicalCycleLength,
+                typicalLutealPhaseLength: typicalLutealPhaseLength,
+                calendar: calendar
+            )
+
+            let personal = frequencies
+                .filter { $0.phase == currentPhase && $0.cyclesObserved > 0 }
+                .compactMap { frequency -> PersonalCandidate? in
+                    let ratio = Double(frequency.occurrences) / Double(frequency.cyclesObserved)
+                    guard ratio >= 0.5 else { return nil }
+                    return PersonalCandidate(
+                        phrase: phrase(forMood: frequency.mood),
+                        occurrences: frequency.occurrences,
+                        cyclesObserved: frequency.cyclesObserved,
+                        ratio: ratio
+                    )
+                }
+                .sorted { $0.ratio > $1.ratio }
+
+            if !personal.isEmpty {
+                return personal.prefix(3).map { candidate in
+                    PatternInsight(
+                        text: "You might \(candidate.phrase) today — shown up in "
+                            + "\(candidate.occurrences) of your last \(candidate.cyclesObserved) cycles.",
+                        source: .personal
+                    )
+                }
+            }
+        }
+
+        return PopulationInsights.topMoods(forPhase: currentPhase).prefix(3).map { mood in
+            PatternInsight(
+                text: "Many people \(phrase(forMood: mood)) during the "
+                    + "\(currentPhase.displayName.lowercased()) phase.",
+                source: .population
+            )
+        }
     }
 
     // MARK: - Phrasing lookups (UI copy, so it lives here rather than in the UI-agnostic engine)
