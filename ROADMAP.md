@@ -1,4 +1,4 @@
-# Cyclo — Feature Development Roadmap (post-architecture)
+# Bloom — Feature Development Roadmap (post-architecture)
 
 ## Context
 
@@ -50,7 +50,7 @@ Replace the placeholder `HomePage` with the approved mockup design, backed by re
   batch — upgraded to open Logging's real screens in the post-batch integration pass below.
 - Files: `Modules/Features/Home/HomePage.swift`, `Modules/Features/Home/TopBar.swift` (minor), new
   `Modules/Features/Home/HomeViewModel.swift`, `Modules/Prediction/SymptomCorrelationEngine.swift`.
-- Does not touch `CycloApp.swift`, `project.pbxproj`, or repository internals (calls, doesn't modify, them).
+- Does not touch `BloomApp.swift`, `project.pbxproj`, or repository internals (calls, doesn't modify, them).
 
 ### Track B — Onboarding flow
 New `Features/Onboarding` collecting: last period start date (anchors the first `PeriodLog` via
@@ -63,11 +63,11 @@ already-built `AppleSignInManager`).
   documented, tunable delta per bucket (e.g. "shorter" −3 days, "longer" +3 days, "~28 days"/"not sure" no
   shift) — add the constants to `PredictionConstants.swift`, same "working default, not a derived constant"
   honesty standard the rest of that file already uses.
-- **Routing**: `CycloApp.swift` branches to Onboarding vs. `HomePage` based on a new `"cyclo.onboardingCompleted"`
+- **Routing**: `BloomApp.swift` branches to Onboarding vs. `HomePage` based on a new `"bloom.onboardingCompleted"`
   `UserDefaults` flag — same simple-`UserDefaults`-bool pattern `AppLockManager` already uses for
   `isAppLockEnabled`, set true once onboarding's last step completes.
 - Files: new `Modules/Features/Onboarding/*`, `Modules/Prediction/PriorTable.swift` + `PredictionConstants.swift`,
-  `CycloApp.swift` (routing branch only).
+  `BloomApp.swift` (routing branch only).
 - Does not touch `HomePage.swift`, `project.pbxproj`, or repository internals.
 
 ### Track C — Logging flow
@@ -77,7 +77,7 @@ vaginalDischarge, ovulationTestResult, pregnancyTest, oralContraceptiveStatus, p
 digestionAndStool, flowIntensity, other) calling `LogRepository.saveLog`/`log(on:)`.
 
 - Files: new `Modules/Features/Logging/*` only.
-- Does not touch `CycleRepository.swift`/`LogRepository.swift` (calls existing methods only), `CycloApp.swift`, or
+- Does not touch `CycleRepository.swift`/`LogRepository.swift` (calls existing methods only), `BloomApp.swift`, or
   `project.pbxproj`.
 
 ### Track D — HealthKit entitlement + export wiring
@@ -93,8 +93,8 @@ digestionAndStool, flowIntensity, other) calling `LogRepository.saveLog`/`log(on
   dependency as a *defaulted* initializer parameter (`healthStore: HealthStoreWriting = HealthKitExporter()`) on
   both repositories, so existing `CycleRepository(modelContext:)`/`LogRepository(modelContext:)` call sites keep
   compiling unchanged.
-- Files: `cyclo-ios.xcodeproj/project.pbxproj` (capability + entitlements reference), new
-  `cyclo-ios/cyclo-ios.entitlements`, Info.plist build settings, `Modules/Core/Repositories/CycleRepository.swift`,
+- Files: `bloom-ios.xcodeproj/project.pbxproj` (capability + entitlements reference), new
+  `bloom-ios/bloom-ios.entitlements`, Info.plist build settings, `Modules/Core/Repositories/CycleRepository.swift`,
   `Modules/Core/Repositories/LogRepository.swift`.
 - Sole track touching `project.pbxproj` in this batch — avoids a merge conflict with the other three.
 
@@ -117,7 +117,7 @@ Deeper `SymptomCorrelationEngine` surfacing (full phase-by-phase breakdown, not 
 visualization of cycle-length history over time. Files: new `Modules/Features/Insights/*`.
 
 ### Track G — Test target
-Add a `cyclo-iosTests` target (Swift Testing, `@Test`/`#expect`) per the original architecture plan's testing
+Add a `bloom-iosTests` target (Swift Testing, `@Test`/`#expect`) per the original architecture plan's testing
 priorities: table-driven `CyclePredictionEngine` tests (0/1/2/3/6/12-cycle inputs, regular vs. high-variance
 series, DST/year-boundary dates), in-memory-`ModelContainer` repository tests, DTO round-trip tests,
 `SymptomCorrelationEngine` phase-bucketing tests. Touches `project.pbxproj` (new target) — run solo in this
@@ -133,7 +133,7 @@ conflict risk with anything else.
 
 ## Verification
 
-- Each worktree branch must pass a clean `xcodebuild -project cyclo-ios.xcodeproj -scheme cyclo-ios -sdk
+- Each worktree branch must pass a clean `xcodebuild -project bloom-ios.xcodeproj -scheme bloom-ios -sdk
   iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 16' build` before merge — same bar used
   throughout this project so far.
 - After the Batch 1 integration pass: manual walk-through on the user's physical device (already set up for

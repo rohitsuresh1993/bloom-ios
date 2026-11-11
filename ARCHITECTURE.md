@@ -1,8 +1,8 @@
-# Cyclo — Architecture, Tech Stack & Prediction Strategy
+# Bloom — Architecture, Tech Stack & Prediction Strategy
 
 ## Context
 
-Cyclo is meant to be a full-featured replacement for Flo (period/symptom logging, prediction, fertility
+Bloom is meant to be a full-featured replacement for Flo (period/symptom logging, prediction, fertility
 tracking, insights) built around one non-negotiable principle: the user's period and symptom data never touches
 a server anyone but the user controls. This is a direct response to Flo's repeated data breaches and the
 reporting that Meta employees mocked Flo users' period data after a data-sharing deal — the architecture needs
@@ -18,7 +18,7 @@ top of them.
 Decisions locked in during the architecture-planning session (2026-10-30):
 1. **Sync**: v1 ships strictly local-only. Models are shaped now so an opt-in CloudKit sync can be bolted on
    later without a data migration.
-2. **HealthKit**: Cyclo writes cycle data to HealthKit at **full Flo-style parity** (menstrual flow, intermenstrual
+2. **HealthKit**: Bloom writes cycle data to HealthKit at **full Flo-style parity** (menstrual flow, intermenstrual
    bleeding, ovulation test results, sexual activity, contraceptive use). HealthKit is a one-way **export
    target**, never a read source — SwiftData stays the sole source of truth. This isn't a privacy boundary (both
    live on-device); it's to avoid two data sources that could disagree — if the prediction engine could read from
@@ -26,7 +26,7 @@ Decisions locked in during the architecture-planning session (2026-10-30):
    Keeping SwiftData the only thing the engine reads keeps it a single source of truth.
 3. **File protection**: `NSFileProtectionComplete` (strictest — the store is unreadable whenever the device is
    locked, including for background work).
-4. **Account model**: Cyclo keeps an optional **Sign in with Apple** layer (no passwords, ever) as a future
+4. **Account model**: Bloom keeps an optional **Sign in with Apple** layer (no passwords, ever) as a future
    identity anchor, but it does not gate any core logging functionality — a user can log periods/symptoms fully
    offline without ever signing in. Apple's opaque per-app user identifier is stored in Keychain, not in the
    SwiftData store, and is never sent anywhere (there's no server to send it to; its only purpose is as a stable
@@ -41,7 +41,7 @@ Decisions locked in during the architecture-planning session (2026-10-30):
 ## Tech Stack
 
 - **Persistence**: SwiftData, local-only `ModelContainer` for v1 (`cloudKitDatabase: .none` in the
-  `ModelConfiguration`, so flipping to `.private("iCloud.cyclo.cyclo-ios")` later is additive, not a rewrite).
+  `ModelConfiguration`, so flipping to `.private("iCloud.bloom.bloom-ios")` later is additive, not a rewrite).
   Use `VersionedSchema`/`SchemaMigrationPlan` from the start so migrations are additive-only going forward.
 - **Prediction**: plain Swift statistics (Bayesian blending, see below) — no CoreML/CreateML, no day-level
   sequence/"next-token" model. A single user generates a few dozen scalar cycle-length observations a year —
@@ -49,7 +49,7 @@ Decisions locked in during the architecture-planning session (2026-10-30):
   doesn't fix this either: the natural periodic unit is the cycle (21-35 days), not the calendar month, and a
   sequence model only earns its complexity by pretraining on *many people's* day-level data — which reintroduces
   the pooled-data problem this architecture exists to avoid. The one legitimate way to use more-than-this-user's
-  data is a model trained once, offline, by the developer, on **public research data** (not Cyclo users), shipped
+  data is a model trained once, offline, by the developer, on **public research data** (not Bloom users), shipped
   frozen in the app bundle — see "Stratified cold-start priors" below, which does exactly this at the
   statistical-table level without needing an ML framework at all. Swift Numerics only if circular-statistics
   needs arise later; Accelerate is unnecessary at this data scale.
@@ -60,7 +60,7 @@ Decisions locked in during the architecture-planning session (2026-10-30):
   biometrics are unavailable, and the Sign in with Apple opaque user identifier (see Auth below). No other secrets
   exist — there's no server, so no passwords/API tokens to store.
 - **Auth**: Sign in with Apple (`AuthenticationServices`), optional and skippable, never blocking core app use.
-  No password, no custom credential storage — Apple handles identity verification entirely; Cyclo only persists
+  No password, no custom credential storage — Apple handles identity verification entirely; Bloom only persists
   the opaque per-app user identifier Apple returns, in Keychain.
 - **HealthKit**: `HKHealthStore.requestAuthorization(toShare:read:)` with **write-only** types — no read types
   requested, since HealthKit is never a source of truth. Export happens from the repository layer after a
@@ -70,7 +70,7 @@ Decisions locked in during the architecture-planning session (2026-10-30):
 - **Dependencies**: first-party Apple frameworks only, zero SPM (Swift Package Manager — Apple's built-in
   dependency manager) packages, for v1. Every third-party dependency is an unaudited trust surface for an app
   whose entire pitch is trustworthiness, and nothing currently required needs one.
-- **Testing**: add a `cyclo-iosTests` target (Swift Testing, `@Test`/`#expect`). Priorities: table-driven tests of
+- **Testing**: add a `bloom-iosTests` target (Swift Testing, `@Test`/`#expect`). Priorities: table-driven tests of
   the prediction engine (0/1/2/3/6/12-cycle inputs, regular vs. high-variance synthetic series, DST/year-boundary
   dates); in-memory-`ModelContainer` repository tests; DTO round-trip tests. Wrap HealthKit, LocalAuthentication,
   and Sign in with Apple behind protocols (`HealthStoreWriting`, `BiometricAuthenticating`, `AppleSignInProviding`)
@@ -82,7 +82,7 @@ Decisions locked in during the architecture-planning session (2026-10-30):
 Extends the existing `Modules/<Area>` convention:
 
 ```
-cyclo-ios/Modules/
+bloom-ios/Modules/
   Core/
     Models/              (existing: User, PeriodLog, Log, LogCategories/* — see fixes below)
     Persistence/         (NEW: ModelContainer setup, schema versioning/migration plans)
@@ -117,7 +117,7 @@ HealthKit export is one-directional and repository-triggered; nothing reads from
 An earlier in-app PIN/biometric lock (`Modules/Security/`, `AppLockManager` + `AppLockGateView` wrapping the
 `@main` app's root content) was built and then removed — it left the app unable to open at all once a PIN was
 set, and rather than debug it further, Settings now just points the user at iOS 18+'s own per-app Face ID/Touch
-ID/passcode lock (Home Screen icon → "Require Face ID") instead of Cyclo rolling its own.
+ID/passcode lock (Home Screen icon → "Require Face ID") instead of Bloom rolling its own.
 
 ## Model fixes (apply now, before UI is built on top of the current shapes)
 
