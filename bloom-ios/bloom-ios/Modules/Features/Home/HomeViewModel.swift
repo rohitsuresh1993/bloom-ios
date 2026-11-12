@@ -52,6 +52,17 @@ final class HomeViewModel: ObservableObject {
 
     struct PatternInsight: Identifiable {
         let id = UUID()
+        // Short noun label + SF Symbol for the Home badge cluster (e.g. "Cramps" / "bolt.heart.fill")
+        // — `Mood`/`Symptoms`' own `LogCategoryOption.displayName`/`iconSystemName` (see
+        // LogCategoryDisplay.swift), reused here rather than a second lookup.
+        let shortLabel: String
+        let icon: String?
+        // Lowercase verb phrase (e.g. "feel calm", "experience cramps", "have mood swings") —
+        // `phrase(forMood:)`/`phrase(forSymptom:)` already conjugate this correctly per item,
+        // since the deck mixes mood adjectives and symptom nouns that don't all take the same
+        // verb. Home's "You may ___" heading is built from this rather than a fixed word.
+        let verbPhrase: String
+        // Full sentence, kept for the badge's accessibility label / expanded detail.
         let text: String
         let source: InsightSource
     }
@@ -92,8 +103,7 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var moodInsights: [PatternInsight] = []
     @Published private(set) var symptomInsights: [PatternInsight] = []
 
-    // Quick-log row + today's chip strip
-    @Published private(set) var todaysChips: [String] = []
+    // Quick-log row
     @Published private(set) var periodLoggedToday: Bool = false
     @Published private(set) var flowLoggedToday: Bool = false
     // Drives the "+" quick-log button's logged-today dot — true if anything other than Period
@@ -155,7 +165,6 @@ final class HomeViewModel: ObservableObject {
             let todaysLogValue = try logRepository.log(on: today)
             flowLoggedToday = todaysLogValue?.flowIntensity != nil
             moreLoggedToday = Self.hasMoreCategoriesLogged(todaysLogValue)
-            todaysChips = Self.chips(for: todaysLogValue)
 
             guard hasCycleData else {
                 fertileArcRange = nil
@@ -425,8 +434,11 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    private struct PersonalCandidate {
-        let phrase: String
+    // Generic over Mood/Symptoms so buildMoodInsights/buildSymptomInsights can keep the raw case
+    // (needed for its `displayName`/`iconSystemName`) instead of flattening to a phrase string
+    // before the badge's short label and icon are known.
+    private struct PersonalCandidate<Case> {
+        let kase: Case
         let occurrences: Int
         let cyclesObserved: Int
         let ratio: Double
@@ -459,13 +471,13 @@ final class HomeViewModel: ObservableObject {
             // 50%-occurrence-over-observed-cycles floor — below this, the pattern is too thin to
             // surface as "this is what you might notice," per ARCHITECTURE.md's retrospective-
             // only framing for this engine.
-            let personal = frequencies
+            let personal: [PersonalCandidate<Symptoms>] = frequencies
                 .filter { $0.phase == currentPhase && $0.cyclesObserved > 0 }
-                .compactMap { frequency -> PersonalCandidate? in
+                .compactMap { frequency in
                     let ratio = Double(frequency.occurrences) / Double(frequency.cyclesObserved)
                     guard ratio >= 0.5 else { return nil }
                     return PersonalCandidate(
-                        phrase: phrase(forSymptom: frequency.symptom),
+                        kase: frequency.symptom,
                         occurrences: frequency.occurrences,
                         cyclesObserved: frequency.cyclesObserved,
                         ratio: ratio
@@ -476,8 +488,11 @@ final class HomeViewModel: ObservableObject {
             if !personal.isEmpty {
                 return personal.prefix(3).map { candidate in
                     PatternInsight(
-                        text: "You might \(candidate.phrase) today — shown up in "
-                            + "\(candidate.occurrences) of your last \(candidate.cyclesObserved) cycles.",
+                        shortLabel: candidate.kase.displayName,
+                        icon: candidate.kase.iconSystemName,
+                        verbPhrase: phrase(forSymptom: candidate.kase),
+                        text: "Shown up in \(candidate.occurrences) of your last "
+                            + "\(candidate.cyclesObserved) cycles.",
                         source: .personal
                     )
                 }
@@ -487,8 +502,10 @@ final class HomeViewModel: ObservableObject {
         // Cold start, or this phase just hasn't produced a confident personal pattern yet.
         return PopulationInsights.topSymptoms(forPhase: currentPhase).prefix(3).map { symptom in
             PatternInsight(
-                text: "Many people \(phrase(forSymptom: symptom)) during the "
-                    + "\(currentPhase.displayName.lowercased()) phase.",
+                shortLabel: symptom.displayName,
+                icon: symptom.iconSystemName,
+                verbPhrase: phrase(forSymptom: symptom),
+                text: "Common during the \(currentPhase.displayName.lowercased()) phase.",
                 source: .population
             )
         }
@@ -516,13 +533,13 @@ final class HomeViewModel: ObservableObject {
                 calendar: calendar
             )
 
-            let personal = frequencies
+            let personal: [PersonalCandidate<Mood>] = frequencies
                 .filter { $0.phase == currentPhase && $0.cyclesObserved > 0 }
-                .compactMap { frequency -> PersonalCandidate? in
+                .compactMap { frequency in
                     let ratio = Double(frequency.occurrences) / Double(frequency.cyclesObserved)
                     guard ratio >= 0.5 else { return nil }
                     return PersonalCandidate(
-                        phrase: phrase(forMood: frequency.mood),
+                        kase: frequency.mood,
                         occurrences: frequency.occurrences,
                         cyclesObserved: frequency.cyclesObserved,
                         ratio: ratio
@@ -533,8 +550,11 @@ final class HomeViewModel: ObservableObject {
             if !personal.isEmpty {
                 return personal.prefix(3).map { candidate in
                     PatternInsight(
-                        text: "You might \(candidate.phrase) today — shown up in "
-                            + "\(candidate.occurrences) of your last \(candidate.cyclesObserved) cycles.",
+                        shortLabel: candidate.kase.displayName,
+                        icon: candidate.kase.iconSystemName,
+                        verbPhrase: phrase(forMood: candidate.kase),
+                        text: "Shown up in \(candidate.occurrences) of your last "
+                            + "\(candidate.cyclesObserved) cycles.",
                         source: .personal
                     )
                 }
@@ -543,8 +563,10 @@ final class HomeViewModel: ObservableObject {
 
         return PopulationInsights.topMoods(forPhase: currentPhase).prefix(3).map { mood in
             PatternInsight(
-                text: "Many people \(phrase(forMood: mood)) during the "
-                    + "\(currentPhase.displayName.lowercased()) phase.",
+                shortLabel: mood.displayName,
+                icon: mood.iconSystemName,
+                verbPhrase: phrase(forMood: mood),
+                text: "Common during the \(currentPhase.displayName.lowercased()) phase.",
                 source: .population
             )
         }
@@ -606,35 +628,4 @@ final class HomeViewModel: ObservableObject {
         return first.uppercased() + result.dropFirst()
     }
 
-    private static func chips(for log: Log?) -> [String] {
-        guard let log else { return [] }
-        var chips: [String] = []
-        if let mood = log.mood { chips += mood.map { humanizeCaseName(String(describing: $0)) } }
-        if let symptoms = log.symptoms { chips += symptoms.map { humanizeCaseName(String(describing: $0)) } }
-        if let sexualActivity = log.sexualActivity {
-            chips += sexualActivity.map { humanizeCaseName(String(describing: $0)) }
-        }
-        if let sexDrive = log.sexDrive { chips.append(humanizeCaseName(String(describing: sexDrive))) }
-        if let vaginalDischarge = log.vaginalDischarge {
-            chips.append(humanizeCaseName(String(describing: vaginalDischarge)))
-        }
-        if let ovulationTestResult = log.ovulationTestResult {
-            chips.append(humanizeCaseName(String(describing: ovulationTestResult)))
-        }
-        if let pregnancyTest = log.pregnancyTest { chips.append(humanizeCaseName(String(describing: pregnancyTest))) }
-        if let oralContraceptiveStatus = log.oralContraceptiveStatus {
-            chips.append(humanizeCaseName(String(describing: oralContraceptiveStatus)))
-        }
-        if let physicalActivity = log.physicalActivity {
-            chips += physicalActivity.map { humanizeCaseName(String(describing: $0)) }
-        }
-        if let digestionAndStool = log.digestionAndStool {
-            chips += digestionAndStool.map { humanizeCaseName(String(describing: $0)) }
-        }
-        if let flowIntensity = log.flowIntensity {
-            chips.append(humanizeCaseName(String(describing: flowIntensity)) + " flow")
-        }
-        if let other = log.other { chips += other.map { humanizeCaseName(String(describing: $0)) } }
-        return chips
-    }
 }

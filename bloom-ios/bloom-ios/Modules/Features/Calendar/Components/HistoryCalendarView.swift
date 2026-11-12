@@ -13,23 +13,39 @@ import SwiftUI
 struct HistoryCalendarView: View {
     let periodDays: Set<Date>
     let loggedDays: Set<Date>
+    // Upcoming predicted period days (see CalendarPage.predictedPeriodDays) — shown as a dotted
+    // ring rather than a fill, so a forecast never looks indistinguishable from an actual logged
+    // day. Days also in `periodDays`/`loggedDays` win over this in `dayCell` below.
+    let predictedPeriodDays: Set<Date>
     let onSelectDay: (Date) -> Void
 
-    @State private var displayedMonth: Date
+    // Lifted up into CalendarPage (was private @State here) so the onboarding tour can force
+    // this back to the current month before spotlighting today's cell — this tab stays mounted
+    // for the app's lifetime, so a user who paged away from the current month before the tour
+    // runs would otherwise leave today out of the rendered grid entirely.
+    @Binding var displayedMonth: Date
 
     private let calendar = Calendar.current
-    private let maxSelectableMonth = Date()
+
+    // Normally bounded to the current month like PeriodDayRangeCalendar's selection limit, but
+    // extended to cover the predicted days too — otherwise a predicted period landing early next
+    // month would be computed but never reachable by paging forward.
+    private var maxSelectableMonth: Date {
+        max(Date(), predictedPeriodDays.max() ?? Date())
+    }
 
     init(
         periodDays: Set<Date>,
         loggedDays: Set<Date>,
-        initialMonth: Date = Date(),
+        predictedPeriodDays: Set<Date> = [],
+        displayedMonth: Binding<Date> = .constant(Date()),
         onSelectDay: @escaping (Date) -> Void
     ) {
         self.periodDays = periodDays
         self.loggedDays = loggedDays
+        self.predictedPeriodDays = predictedPeriodDays
+        self._displayedMonth = displayedMonth
         self.onSelectDay = onSelectDay
-        self._displayedMonth = State(initialValue: Calendar.current.startOfDay(for: initialMonth))
     }
 
     var body: some View {
@@ -86,13 +102,15 @@ struct HistoryCalendarView: View {
         }
     }
 
+    @ViewBuilder
     private func dayCell(_ day: Date) -> some View {
         let normalized = calendar.startOfDay(for: day)
         let isPeriodDay = periodDays.contains(normalized)
         let isLoggedOnly = !isPeriodDay && loggedDays.contains(normalized)
+        let isPredicted = !isPeriodDay && !isLoggedOnly && predictedPeriodDays.contains(normalized)
         let isToday = calendar.isDateInToday(day)
 
-        return Button {
+        let button = Button {
             onSelectDay(normalized)
         } label: {
             Text("\(calendar.component(.day, from: day))")
@@ -107,6 +125,13 @@ struct HistoryCalendarView: View {
                 )
                 .overlay(
                     Circle()
+                        .strokeBorder(
+                            Color.bloomPrimary,
+                            style: StrokeStyle(lineWidth: isPredicted ? 1.5 : 0, dash: [3, 3])
+                        )
+                )
+                .overlay(
+                    Circle()
                         .strokeBorder(Color.primary.opacity(isToday ? 0.4 : 0), lineWidth: 1)
                         .padding(1)
                 )
@@ -115,6 +140,14 @@ struct HistoryCalendarView: View {
         // .plain for the same reason PeriodDayRangeCalendar's dayCell needs it — see that file's
         // comment on this exact line.
         .buttonStyle(.plain)
+
+        // Only today's cell is a tour target — tagging every cell would report 42 anchors for
+        // the same step and the preference-merge would just keep whichever happened to be last.
+        if isToday {
+            button.tourAnchor(.calendarDay)
+        } else {
+            button
+        }
     }
 
     private var legend: some View {
@@ -126,6 +159,12 @@ struct HistoryCalendarView: View {
             HStack(spacing: 6) {
                 Circle().strokeBorder(Color.bloomSecondary, lineWidth: 1.5).frame(width: 10, height: 10)
                 Text("Logged").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 6) {
+                Circle()
+                    .strokeBorder(Color.bloomPrimary, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+                    .frame(width: 10, height: 10)
+                Text("Predicted").font(.caption).foregroundStyle(.secondary)
             }
         }
     }

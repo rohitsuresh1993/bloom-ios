@@ -30,12 +30,27 @@ struct BloomApp: App {
 // (OnboardingViewModel.completeOnboarding).
 private struct RootRouterView: View {
     @AppStorage(OnboardingViewModel.onboardingCompletedDefaultsKey) private var onboardingCompleted = false
+    // Starts true on every cold launch (not persisted) — the in-app splash is meant to be seen
+    // once per launch, not skipped on return visits within the same app session.
+    @State private var isShowingSplash = true
 
     var body: some View {
-        if onboardingCompleted {
-            RootTabView()
-        } else {
-            OnboardingRootView()
+        ZStack {
+            if isShowingSplash {
+                SplashView()
+                    .transition(.opacity)
+            } else if onboardingCompleted {
+                RootTabView()
+                    .transition(.opacity)
+            } else {
+                OnboardingRootView()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isShowingSplash)
+        .task {
+            try? await Task.sleep(for: .seconds(1))
+            isShowingSplash = false
         }
     }
 }

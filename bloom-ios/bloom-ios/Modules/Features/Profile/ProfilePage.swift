@@ -17,6 +17,7 @@ import SwiftUI
 
 struct ProfilePage: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var tourCoordinator: TourCoordinator
 
     private let appleSignInManager: AppleSignInProviding = AppleSignInManager(
         presentationAnchorProvider: ProfilePresentationAnchorProvider()
@@ -57,14 +58,36 @@ struct ProfilePage: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                profileSection
-                appLockSection
-                signInSection
-                healthKitSection
-                dataSection
-                aboutSection
-                appearanceSection
+            ScrollViewReader { scrollProxy in
+                Form {
+                    profileSection
+                    appLockSection
+                    signInSection
+                    healthKitSection
+                    dataSection
+                    aboutSection
+                    appearanceSection
+                }
+                // Brings the Edit button into view for the tour's single Profile step — without
+                // this, if the user had this Form scrolled down before the tour reached Profile,
+                // the spotlight would point at a button that's scrolled off-screen.
+                //
+                // `.task(id:)`, not `.onChange`: Profile isn't the default tab, so on the tour's
+                // first-ever visit here this view doesn't exist yet at the moment currentStep
+                // becomes `.profileEdit` — RootTabView's own onChange is what creates it, but by
+                // then `.onChange` has nothing to transition *from*, so it would never fire.
+                // `.task(id:)` also runs once up front for whatever value is already current.
+                .task(id: tourCoordinator.currentStep) {
+                    guard tourCoordinator.currentStep == .profileEdit else { return }
+                    // On a first-ever visit to this tab, scrollTo can lose the race against the
+                    // Form's own initial layout if called the instant the view appears — a short
+                    // settle delay is the standard workaround.
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard tourCoordinator.currentStep == .profileEdit else { return }
+                    withAnimation {
+                        scrollProxy.scrollTo(TourStep.profileEdit, anchor: .center)
+                    }
+                }
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
@@ -115,8 +138,13 @@ struct ProfilePage: View {
                 Button("Edit") { showingEditProfile = true }
                     .font(.caption.weight(.semibold))
                     .textCase(nil)
+                    .tourAnchor(.profileEdit)
             }
         }
+        // `.id()` on the whole Section, not just the header's Edit button — Form/List's
+        // scrollTo(id:) needs an id on something row/section-shaped to reliably resolve; a tiny
+        // nested button inside a Section header isn't a dependable scroll target.
+        .id(TourStep.profileEdit)
     }
 
     private var knownConditionsSummary: String {
@@ -376,6 +404,8 @@ struct ProfilePage: View {
             NavigationLink("Privacy Policy") {
                 PrivacyPolicyView()
             }
+
+            Button("Retake Tour") { tourCoordinator.start() }
         } header: {
             Text("About")
         }
@@ -493,5 +523,6 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
 
 #Preview {
     ProfilePage()
+        .environmentObject(TourCoordinator())
         .modelContainer(PersistenceController.makeContainer(inMemory: true))
 }

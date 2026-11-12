@@ -18,6 +18,7 @@ import SwiftData
 struct TodayLogView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var tourCoordinator: TourCoordinator
 
     let initialScrollTarget: LogCategoryKind?
 
@@ -51,6 +52,33 @@ struct TodayLogView: View {
     private static let calendar = Calendar.current
 
     var body: some View {
+        // Wraps the whole screen so this GeometryReader is a genuine ancestor of the
+        // `.tourAnchor(.todayLog)`-tagged search field below — required for `proxy[anchor]` to
+        // resolve correctly (see TourOverlayView's doc comment). This sheet's content is a
+        // separate view tree from RootTabView's for preference-propagation purposes, so it needs
+        // its own anchor collection + resolution rather than relying on RootTabView's. Named
+        // `geometryProxy` (not `proxy`) to avoid shadowing the ScrollViewReader's own `proxy` below.
+        GeometryReader { geometryProxy in
+            ZStack {
+                logForm
+                TourOverlayView(
+                    allowedSteps: [.todayLog],
+                    cutoutRect: tourCoordinator.resolvedCutoutRect(in: geometryProxy),
+                    containerSize: geometryProxy.size,
+                    onNext: { dismiss(); tourCoordinator.advance() },
+                    onSkip: { dismiss(); tourCoordinator.skip() }
+                )
+            }
+        }
+        // Must match the scrim's own .ignoresSafeArea() inside TourOverlayView — see
+        // RootTabView's identical comment for why the two have to agree.
+        .ignoresSafeArea()
+        .onPreferenceChange(TourAnchorPreferenceKey.self) { newAnchors in
+            tourCoordinator.anchors.merge(newAnchors) { _, new in new }
+        }
+    }
+
+    private var logForm: some View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -144,6 +172,7 @@ struct TodayLogView: View {
         .padding(.vertical, 10)
         .background(Color(.tertiarySystemFill))
         .clipShape(Capsule())
+        .tourAnchor(.todayLog)
     }
 
     // MARK: - Cards
@@ -320,5 +349,6 @@ struct TodayLogView: View {
 
 #Preview {
     TodayLogView()
+        .environmentObject(TourCoordinator())
         .modelContainer(PersistenceController.makeContainer(inMemory: true))
 }

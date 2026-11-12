@@ -14,6 +14,12 @@ struct PeriodDayRangeCalendar: View {
     // history) — shown with a lighter ring so the user can see their logging history while
     // picking a new period, without it being confused for the active selection.
     let loggedDays: Set<Date>
+    // Upcoming predicted period days (see CalendarPage/HomeViewModel's own prediction call) —
+    // shown as a dotted ring, same as HistoryCalendarView's "Predicted" legend entry, so this
+    // calendar and the Calendar tab agree on what a forecast looks like. Future days are still
+    // un-selectable (see `isFuture`/`.disabled` below) — showing the forecast here is purely
+    // informational, not an invitation to log it ahead of time.
+    let predictedPeriodDays: Set<Date>
     @State private var displayedMonth: Date
     // Tracks the in-flight auto-continue sequence (see `toggle`) so a new tap can cancel it
     // instead of racing it — otherwise a manual toggle mid-sequence and the sequence's own
@@ -23,10 +29,23 @@ struct PeriodDayRangeCalendar: View {
     private let calendar = Calendar.current
     private let maxSelectableDate = Date()
 
-    init(selectedDays: Binding<Set<Date>>, loggedDays: Set<Date> = [], initialMonth: Date = Date()) {
+    init(
+        selectedDays: Binding<Set<Date>>,
+        loggedDays: Set<Date> = [],
+        predictedPeriodDays: Set<Date> = [],
+        initialMonth: Date = Date()
+    ) {
         self._selectedDays = selectedDays
         self.loggedDays = loggedDays
+        self.predictedPeriodDays = predictedPeriodDays
         self._displayedMonth = State(initialValue: Calendar.current.startOfDay(for: initialMonth))
+    }
+
+    // Separate from `maxSelectableDate`: that one stays pinned to today since logging a period
+    // ahead of time must never be allowed, but paging the month header forward still needs to
+    // reach whichever month the prediction actually falls in.
+    private var maxViewableMonth: Date {
+        max(maxSelectableDate, predictedPeriodDays.max() ?? maxSelectableDate)
     }
 
     var body: some View {
@@ -34,6 +53,7 @@ struct PeriodDayRangeCalendar: View {
             monthHeader
             weekdaySymbolsRow
             dayGrid
+            legend
 
             if let start = selectedDays.min(), let end = selectedDays.max() {
                 Text(selectionSummary(start: start, end: end))
@@ -72,6 +92,21 @@ struct PeriodDayRangeCalendar: View {
         .contentShape(Rectangle())
     }
 
+    private var legend: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 6) {
+                Circle().strokeBorder(Color.bloomPrimary.opacity(0.5), lineWidth: 1.5).frame(width: 10, height: 10)
+                Text("Other periods").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 6) {
+                Circle()
+                    .strokeBorder(Color.bloomPrimary, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+                    .frame(width: 10, height: 10)
+                Text("Predicted").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var weekdaySymbolsRow: some View {
         HStack {
             ForEach(calendar.veryShortStandaloneWeekdaySymbols, id: \.self) { symbol in
@@ -100,19 +135,27 @@ struct PeriodDayRangeCalendar: View {
         let normalized = calendar.startOfDay(for: day)
         let isSelected = selectedDays.contains(normalized)
         let isPreviouslyLogged = !isSelected && loggedDays.contains(normalized)
+        let isPredicted = !isSelected && !isPreviouslyLogged && predictedPeriodDays.contains(normalized)
         let isFuture = day > maxSelectableDate
         return Button {
             toggle(day)
         } label: {
             Text("\(calendar.component(.day, from: day))")
                 .font(.subheadline.weight(isSelected ? .bold : .regular))
-                .foregroundStyle(isFuture ? Color.secondary.opacity(0.3) : (isSelected ? .white : .primary))
+                .foregroundStyle(isSelected ? .white : .primary)
                 .frame(maxWidth: .infinity, minHeight: 36)
                 .background(isSelected ? Color.bloomPrimary : Color.clear)
                 .clipShape(Circle())
                 .overlay(
                     Circle()
                         .strokeBorder(Color.bloomPrimary.opacity(0.5), lineWidth: isPreviouslyLogged ? 1.5 : 0)
+                )
+                .overlay(
+                    Circle()
+                        .strokeBorder(
+                            Color.bloomPrimary,
+                            style: StrokeStyle(lineWidth: isPredicted ? 1.5 : 0, dash: [3, 3])
+                        )
                 )
                 .contentShape(Circle())
         }
@@ -132,7 +175,7 @@ struct PeriodDayRangeCalendar: View {
 
     private var isNextMonthDisabled: Bool {
         guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: displayedMonth) else { return true }
-        return calendar.compare(nextMonth, to: maxSelectableDate, toGranularity: .month) == .orderedDescending
+        return calendar.compare(nextMonth, to: maxViewableMonth, toGranularity: .month) == .orderedDescending
     }
 
     private func shiftMonth(by value: Int) {
@@ -147,6 +190,11 @@ struct PeriodDayRangeCalendar: View {
         autoFillTask = nil
 
         let normalized = calendar.startOfDay(for: day)
+        // Every tap gets a haptic — including removing a day, or adding one to an already-
+        // in-progress selection (e.g. extending the most recently logged period one day at a
+        // time) — not just the first tap of a brand-new sequence below.
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
         if selectedDays.contains(normalized) {
             selectedDays.remove(normalized)
             return
@@ -159,7 +207,6 @@ struct PeriodDayRangeCalendar: View {
         // First day tapped in a fresh selection (not extending/editing an existing range):
         // auto-continue selecting the next few days so the user doesn't have to tap through
         // an entire period length one day at a time, with a haptic per day added.
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         autoFillTask = Task { [calendar, maxSelectableDate] in
             for offset in 1...4 {
                 do {

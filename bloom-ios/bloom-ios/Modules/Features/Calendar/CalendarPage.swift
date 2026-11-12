@@ -16,11 +16,18 @@ import SwiftData
 struct CalendarPage: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var tabCoordinator: AppTabCoordinator
+    @EnvironmentObject private var tourCoordinator: TourCoordinator
 
     @State private var periodDays: Set<Date> = []
     @State private var loggedDays: Set<Date> = []
+    @State private var predictedPeriodDays: Set<Date> = []
     @State private var selectedDay: SelectedDay?
     @State private var errorMessage: String?
+    // Lifted up from HistoryCalendarView (was its own private @State) so the tour can force this
+    // back to the current month before spotlighting today's cell — this tab stays mounted for the
+    // app's lifetime, so if the user ever paged away from the current month, it would otherwise
+    // stay wherever they left it.
+    @State private var displayedMonth = Date()
 
     // `.sheet(item:)` needs Identifiable; wrapping avoids a retroactive `Identifiable`
     // conformance on `Date` itself just for this one call site.
@@ -31,6 +38,7 @@ struct CalendarPage: View {
 
     private var cycleRepository: CycleRepository { CycleRepository(modelContext: modelContext) }
     private var logRepository: LogRepository { LogRepository(modelContext: modelContext) }
+    private var userRepository: UserRepository { UserRepository(modelContext: modelContext) }
 
     var body: some View {
         NavigationStack {
@@ -45,6 +53,8 @@ struct CalendarPage: View {
                     HistoryCalendarView(
                         periodDays: periodDays,
                         loggedDays: loggedDays,
+                        predictedPeriodDays: predictedPeriodDays,
+                        displayedMonth: $displayedMonth,
                         onSelectDay: { selectedDay = SelectedDay(date: $0) }
                     )
                     .padding()
@@ -61,6 +71,15 @@ struct CalendarPage: View {
         .onChange(of: tabCoordinator.selectedTab) { _, newValue in
             guard newValue == .calendar else { return }
             load()
+        }
+        // `.task(id:)`, not `.onChange`: Calendar isn't the default tab, so on the tour's
+        // first-ever visit here this view doesn't exist yet at the moment currentStep becomes
+        // `.calendarDay` — RootTabView's own onChange is what creates it, but by then
+        // `.onChange` has nothing to transition *from*, so it would never fire (same bug fixed
+        // in ProfilePage's scroll-to-Edit logic).
+        .task(id: tourCoordinator.currentStep) {
+            guard tourCoordinator.currentStep == .calendarDay else { return }
+            displayedMonth = Date()
         }
         .sheet(item: $selectedDay) { day in
             DayDetailSheet(
@@ -79,6 +98,10 @@ struct CalendarPage: View {
             let logs = try logRepository.allLogs()
             let calendar = Calendar.current
             loggedDays = Set(logs.map { calendar.startOfDay(for: $0.timestamp) })
+
+            predictedPeriodDays = PeriodPrediction.upcomingPeriodDays(
+                periods: periods, user: try userRepository.currentUser(), calendar: calendar
+            )
 
             errorMessage = nil
         } catch {
@@ -201,5 +224,6 @@ private struct DayDetailSheet: View {
 #Preview {
     CalendarPage()
         .environmentObject(AppTabCoordinator())
+        .environmentObject(TourCoordinator())
         .modelContainer(PersistenceController.makeContainer(inMemory: true))
 }
